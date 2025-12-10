@@ -4,6 +4,8 @@ const VERIZON_CONFIG = {
   apiUrl: process.env.VERIZON_API_URL || 'https://fim.api.us.fleetmatics.com',
   username: process.env.VERIZON_USERNAME || '',
   password: process.env.VERIZON_PASSWORD || '',
+  // This is the correct APP_ID from the working Warehouse Operations implementation
+  appId: 'fleetmatics-p-us-IsVqHeP2nslCQYVYMBTpbPiFW6udcPl14dw5GAbA',
 };
 
 // Token cache
@@ -34,8 +36,17 @@ export async function getVerizonToken(): Promise<string> {
     throw new Error(`Failed to authenticate with Verizon Connect: ${errorText}`);
   }
 
-  const tokenData = await response.json();
-  cachedToken = tokenData.token || tokenData.Token;
+  // Verizon returns the token as raw text (JWT), not JSON
+  const tokenText = await response.text();
+
+  // Check if it's JSON or raw token
+  if (tokenText.startsWith('{')) {
+    const tokenData = JSON.parse(tokenText);
+    cachedToken = tokenData.token || tokenData.Token;
+  } else {
+    // It's a raw JWT token
+    cachedToken = tokenText;
+  }
 
   // Token typically expires in 1 hour, subtract 5 minutes for safety
   tokenExpiry = new Date();
@@ -52,7 +63,7 @@ async function verizonFetch(endpoint: string, options: RequestInit = {}) {
   const response = await fetch(url, {
     ...options,
     headers: {
-      Authorization: `Atmosphere atmosphere_app_id=CoachingTracking_5113, Bearer ${token}`,
+      Authorization: `Atmosphere atmosphere_app_id=${VERIZON_CONFIG.appId}, Bearer ${token}`,
       Accept: 'application/json',
       ...options.headers,
     },
@@ -60,7 +71,7 @@ async function verizonFetch(endpoint: string, options: RequestInit = {}) {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Verizon Connect API error: ${errorText}`);
+    throw new Error(`Verizon Connect API error (${response.status}): ${errorText}`);
   }
 
   return response.json();
