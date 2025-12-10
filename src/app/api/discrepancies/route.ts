@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { format, parseISO, startOfDay, endOfDay, subDays } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 export async function GET(req: NextRequest) {
   const supabase = createServerClient();
@@ -81,35 +81,40 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'ID is required' }, { status: 400 });
     }
 
-    const updateData: any = { updated_at: new Date().toISOString() };
-    if (reviewed !== undefined) {
-      updateData.reviewed = reviewed;
-      if (reviewed) {
-        updateData.reviewed_at = new Date().toISOString();
-        if (reviewed_by) updateData.reviewed_by = reviewed_by;
-      }
-    }
-    if (notes !== undefined) {
-      updateData.notes = notes;
-    }
+    // Build update object inline to avoid type issues
+    const now = new Date().toISOString();
 
-    const { data, error } = await supabase
+    // First, update the record
+    const { error: updateError } = await supabase
       .from('arrival_discrepancies')
-      .update(updateData)
+      .update({
+        reviewed: reviewed ?? undefined,
+        reviewed_at: reviewed ? now : undefined,
+        reviewed_by: reviewed && reviewed_by ? reviewed_by : undefined,
+        notes: notes ?? undefined,
+      })
+      .eq('id', id);
+
+    if (updateError) throw updateError;
+
+    // Then fetch the updated record
+    const { data, error: fetchError } = await supabase
+      .from('arrival_discrepancies')
+      .select('*')
       .eq('id', id)
-      .select()
       .single();
 
-    if (error) throw error;
+    if (fetchError) throw fetchError;
 
     return NextResponse.json({
       success: true,
       discrepancy: data,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to update discrepancy';
     console.error('Error updating discrepancy:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to update discrepancy' },
+      { error: message },
       { status: 500 }
     );
   }

@@ -1,238 +1,464 @@
-// Database types for Tech Truth
 export type Json =
   | string
   | number
   | boolean
   | null
   | { [key: string]: Json | undefined }
-  | Json[];
+  | Json[]
 
-export interface Database {
+export type Database = {
+  __InternalSupabase: {
+    PostgrestVersion: "13.0.5"
+  }
   public: {
     Tables: {
-      technicians: {
-        Row: {
-          id: string;
-          st_technician_id: number;
-          name: string;
-          email: string | null;
-          phone: string | null;
-          verizon_driver_id: string | null;
-          verizon_vehicle_id: string | null;
-          active: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          st_technician_id: number;
-          name: string;
-          email?: string | null;
-          phone?: string | null;
-          verizon_driver_id?: string | null;
-          verizon_vehicle_id?: string | null;
-          active?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          st_technician_id?: number;
-          name?: string;
-          email?: string | null;
-          phone?: string | null;
-          verizon_driver_id?: string | null;
-          verizon_vehicle_id?: string | null;
-          active?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      jobs: {
-        Row: {
-          id: string;
-          st_job_id: number;
-          st_appointment_id: number | null;
-          technician_id: string;
-          job_number: string;
-          customer_name: string | null;
-          job_date: string;
-          scheduled_start: string;
-          scheduled_end: string | null;
-          actual_arrival: string | null;
-          job_address: string | null;
-          job_latitude: number | null;
-          job_longitude: number | null;
-          is_first_job_of_day: boolean;
-          arrival_variance_minutes: number | null;
-          status: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          st_job_id: number;
-          st_appointment_id?: number | null;
-          technician_id: string;
-          job_number: string;
-          customer_name?: string | null;
-          job_date: string;
-          scheduled_start: string;
-          scheduled_end?: string | null;
-          actual_arrival?: string | null;
-          job_address?: string | null;
-          job_latitude?: number | null;
-          job_longitude?: number | null;
-          is_first_job_of_day?: boolean;
-          arrival_variance_minutes?: number | null;
-          status?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          st_job_id?: number;
-          st_appointment_id?: number | null;
-          technician_id?: string;
-          job_number?: string;
-          customer_name?: string | null;
-          job_date?: string;
-          scheduled_start?: string;
-          scheduled_end?: string | null;
-          actual_arrival?: string | null;
-          job_address?: string | null;
-          job_latitude?: number | null;
-          job_longitude?: number | null;
-          is_first_job_of_day?: boolean;
-          arrival_variance_minutes?: number | null;
-          status?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      gps_events: {
-        Row: {
-          id: string;
-          technician_id: string;
-          job_id: string | null;
-          latitude: number;
-          longitude: number;
-          timestamp: string;
-          speed: number | null;
-          heading: number | null;
-          address: string | null;
-          event_type: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          technician_id: string;
-          job_id?: string | null;
-          latitude: number;
-          longitude: number;
-          timestamp: string;
-          speed?: number | null;
-          heading?: number | null;
-          address?: string | null;
-          event_type?: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          technician_id?: string;
-          job_id?: string | null;
-          latitude?: number;
-          longitude?: number;
-          timestamp?: string;
-          speed?: number | null;
-          heading?: number | null;
-          address?: string | null;
-          event_type?: string;
-          created_at?: string;
-        };
-      };
       arrival_discrepancies: {
         Row: {
-          id: string;
-          technician_id: string;
-          job_id: string;
-          job_date: string;
-          scheduled_arrival: string;
-          actual_arrival: string;
-          variance_minutes: number;
-          is_late: boolean;
-          is_first_job: boolean;
-          notes: string | null;
-          reviewed: boolean;
-          reviewed_by: string | null;
-          reviewed_at: string | null;
-          created_at: string;
-        };
+          actual_arrival: string
+          created_at: string | null
+          id: string
+          is_first_job: boolean | null
+          is_late: boolean | null
+          job_date: string
+          job_id: string | null
+          notes: string | null
+          reviewed: boolean | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          scheduled_arrival: string
+          technician_id: string | null
+          variance_minutes: number
+        }
         Insert: {
-          id?: string;
-          technician_id: string;
-          job_id: string;
-          job_date: string;
-          scheduled_arrival: string;
-          actual_arrival: string;
-          variance_minutes: number;
-          is_late?: boolean;
-          is_first_job?: boolean;
-          notes?: string | null;
-          reviewed?: boolean;
-          reviewed_by?: string | null;
-          reviewed_at?: string | null;
-          created_at?: string;
-        };
+          actual_arrival: string
+          created_at?: string | null
+          id?: string
+          is_first_job?: boolean | null
+          is_late?: boolean | null
+          job_date: string
+          job_id?: string | null
+          notes?: string | null
+          reviewed?: boolean | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          scheduled_arrival: string
+          technician_id?: string | null
+          variance_minutes: number
+        }
         Update: {
-          id?: string;
-          technician_id?: string;
-          job_id?: string;
-          job_date?: string;
-          scheduled_arrival?: string;
-          actual_arrival?: string;
-          variance_minutes?: number;
-          is_late?: boolean;
-          is_first_job?: boolean;
-          notes?: string | null;
-          reviewed?: boolean;
-          reviewed_by?: string | null;
-          reviewed_at?: string | null;
-          created_at?: string;
-        };
-      };
+          actual_arrival?: string
+          created_at?: string | null
+          id?: string
+          is_first_job?: boolean | null
+          is_late?: boolean | null
+          job_date?: string
+          job_id?: string | null
+          notes?: string | null
+          reviewed?: boolean | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          scheduled_arrival?: string
+          technician_id?: string | null
+          variance_minutes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "arrival_discrepancies_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "arrival_discrepancies_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technician_performance"
+            referencedColumns: ["technician_id"]
+          },
+          {
+            foreignKeyName: "arrival_discrepancies_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gps_events: {
+        Row: {
+          address: string | null
+          created_at: string | null
+          event_type: string | null
+          heading: number | null
+          id: string
+          job_id: string | null
+          latitude: number
+          longitude: number
+          speed: number | null
+          technician_id: string | null
+          timestamp: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string | null
+          event_type?: string | null
+          heading?: number | null
+          id?: string
+          job_id?: string | null
+          latitude: number
+          longitude: number
+          speed?: number | null
+          technician_id?: string | null
+          timestamp: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string | null
+          event_type?: string | null
+          heading?: number | null
+          id?: string
+          job_id?: string | null
+          latitude?: number
+          longitude?: number
+          speed?: number | null
+          technician_id?: string | null
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gps_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gps_events_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technician_performance"
+            referencedColumns: ["technician_id"]
+          },
+          {
+            foreignKeyName: "gps_events_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jobs: {
+        Row: {
+          actual_arrival: string | null
+          arrival_variance_minutes: number | null
+          created_at: string | null
+          customer_name: string | null
+          id: string
+          is_first_job_of_day: boolean | null
+          job_address: string | null
+          job_date: string
+          job_latitude: number | null
+          job_longitude: number | null
+          job_number: string
+          scheduled_end: string | null
+          scheduled_start: string
+          st_appointment_id: number | null
+          st_job_id: number
+          status: string | null
+          technician_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          actual_arrival?: string | null
+          arrival_variance_minutes?: number | null
+          created_at?: string | null
+          customer_name?: string | null
+          id?: string
+          is_first_job_of_day?: boolean | null
+          job_address?: string | null
+          job_date: string
+          job_latitude?: number | null
+          job_longitude?: number | null
+          job_number: string
+          scheduled_end?: string | null
+          scheduled_start: string
+          st_appointment_id?: number | null
+          st_job_id: number
+          status?: string | null
+          technician_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          actual_arrival?: string | null
+          arrival_variance_minutes?: number | null
+          created_at?: string | null
+          customer_name?: string | null
+          id?: string
+          is_first_job_of_day?: boolean | null
+          job_address?: string | null
+          job_date?: string
+          job_latitude?: number | null
+          job_longitude?: number | null
+          job_number?: string
+          scheduled_end?: string | null
+          scheduled_start?: string
+          st_appointment_id?: number | null
+          st_job_id?: number
+          status?: string | null
+          technician_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jobs_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technician_performance"
+            referencedColumns: ["technician_id"]
+          },
+          {
+            foreignKeyName: "jobs_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_logs: {
         Row: {
-          id: string;
-          sync_type: string;
-          status: string;
-          records_processed: number;
-          errors: Json | null;
-          started_at: string;
-          completed_at: string | null;
-        };
+          completed_at: string | null
+          errors: Json | null
+          id: string
+          records_processed: number | null
+          started_at: string | null
+          status: string | null
+          sync_type: string
+        }
         Insert: {
-          id?: string;
-          sync_type: string;
-          status?: string;
-          records_processed?: number;
-          errors?: Json | null;
-          started_at?: string;
-          completed_at?: string | null;
-        };
+          completed_at?: string | null
+          errors?: Json | null
+          id?: string
+          records_processed?: number | null
+          started_at?: string | null
+          status?: string | null
+          sync_type: string
+        }
         Update: {
-          id?: string;
-          sync_type?: string;
-          status?: string;
-          records_processed?: number;
-          errors?: Json | null;
-          started_at?: string;
-          completed_at?: string | null;
-        };
-      };
-    };
-  };
+          completed_at?: string | null
+          errors?: Json | null
+          id?: string
+          records_processed?: number | null
+          started_at?: string | null
+          status?: string | null
+          sync_type?: string
+        }
+        Relationships: []
+      }
+      technicians: {
+        Row: {
+          active: boolean | null
+          created_at: string | null
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          st_technician_id: number
+          updated_at: string | null
+          verizon_driver_id: string | null
+          verizon_vehicle_id: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          st_technician_id: number
+          updated_at?: string | null
+          verizon_driver_id?: string | null
+          verizon_vehicle_id?: string | null
+        }
+        Update: {
+          active?: boolean | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          st_technician_id?: number
+          updated_at?: string | null
+          verizon_driver_id?: string | null
+          verizon_vehicle_id?: string | null
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      technician_performance: {
+        Row: {
+          avg_late_minutes: number | null
+          last_discrepancy_date: string | null
+          late_arrivals: number | null
+          late_first_jobs: number | null
+          st_technician_id: number | null
+          technician_id: string | null
+          technician_name: string | null
+          total_discrepancies: number | null
+        }
+        Relationships: []
+      }
+      today_discrepancies: {
+        Row: {
+          actual_arrival: string | null
+          customer_name: string | null
+          id: string | null
+          is_first_job: boolean | null
+          is_late: boolean | null
+          job_address: string | null
+          job_date: string | null
+          job_number: string | null
+          notes: string | null
+          reviewed: boolean | null
+          scheduled_arrival: string | null
+          st_technician_id: number | null
+          technician_name: string | null
+          variance_minutes: number | null
+        }
+        Relationships: []
+      }
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
 }
+
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
 
 // Convenience types
 export type Technician = Database['public']['Tables']['technicians']['Row'];
