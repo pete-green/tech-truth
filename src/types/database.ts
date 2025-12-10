@@ -296,6 +296,36 @@ export type Database = {
         }
         Relationships: []
       }
+      trucks: {
+        Row: {
+          active: boolean | null
+          created_at: string | null
+          description: string | null
+          id: string
+          truck_number: string
+          updated_at: string | null
+          verizon_vehicle_id: string
+        }
+        Insert: {
+          active?: boolean | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          truck_number: string
+          updated_at?: string | null
+          verizon_vehicle_id: string
+        }
+        Update: {
+          active?: boolean | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          truck_number?: string
+          updated_at?: string | null
+          verizon_vehicle_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       technician_performance: {
@@ -466,3 +496,4 @@ export type Job = Database['public']['Tables']['jobs']['Row'];
 export type GpsEvent = Database['public']['Tables']['gps_events']['Row'];
 export type ArrivalDiscrepancy = Database['public']['Tables']['arrival_discrepancies']['Row'];
 export type SyncLog = Database['public']['Tables']['sync_logs']['Row'];
+export type Truck = Database['public']['Tables']['trucks']['Row'];
