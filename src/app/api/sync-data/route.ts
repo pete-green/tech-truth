@@ -283,9 +283,12 @@ export async function POST(req: NextRequest) {
 
         // Step 3h: Calculate variance and create discrepancy if late
         // ONLY create discrepancies when we have actual GPS-verified arrival data
+        let varianceMinutes: number | null = null;
+        let isLate = false;
+
         if (arrival) {
-          const varianceMinutes = differenceInMinutes(arrival.arrivalTime, scheduledTime);
-          const isLate = varianceMinutes > 10; // More than 10 minutes late
+          varianceMinutes = differenceInMinutes(arrival.arrivalTime, scheduledTime);
+          isLate = varianceMinutes > 10; // More than 10 minutes late
 
           if (isLate) {
             const { error: discError } = await supabase
