@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { getTechnicians, getAppointments, getAppointmentAssignmentsByJobId, getJob, getLocation } from '@/lib/service-titan';
-import { getVehicleGPSHistory, GPSHistoryPoint } from '@/lib/verizon-connect';
-import { startOfDay, endOfDay, format, parseISO, differenceInMinutes, subMinutes, addHours } from 'date-fns';
+import { getVehicleGPSData, GPSHistoryPoint } from '@/lib/verizon-connect';
+import { parseISO, differenceInMinutes, subMinutes, addHours } from 'date-fns';
+import { toZonedTime, fromZonedTime, format } from 'date-fns-tz';
 import { findArrivalTime, ARRIVAL_RADIUS_FEET } from '@/lib/geo-utils';
 
 export const maxDuration = 60; // Vercel/Netlify function timeout (up to 60s on pro)
+
+// Business operates in Eastern Time
+const EST_TIMEZONE = 'America/New_York';
 
 interface ProcessingError {
   type: string;
@@ -36,12 +40,17 @@ export async function POST(req: NextRequest) {
     const firstJobOnly = body.firstJobOnly !== false; // Default to true
 
     // Default to today if no date provided
+    // IMPORTANT: Use EST timezone for date boundaries since the business operates in Eastern Time
     const targetDate = dateParam ? parseISO(dateParam) : new Date();
     const dateStr = format(targetDate, 'yyyy-MM-dd');
-    const startsOnOrAfter = startOfDay(targetDate).toISOString();
-    const startsBefore = endOfDay(targetDate).toISOString();
 
-    console.log(`Starting sync for date: ${dateStr}`);
+    // Create EST midnight boundaries: e.g., Dec 10 00:00 EST to Dec 10 23:59:59 EST
+    // fromZonedTime converts "this time in EST" to UTC
+    const startsOnOrAfter = fromZonedTime(`${dateStr}T00:00:00`, EST_TIMEZONE).toISOString();
+    const startsBefore = fromZonedTime(`${dateStr}T23:59:59`, EST_TIMEZONE).toISOString();
+
+    console.log(`Starting sync for date: ${dateStr} (EST)`);
+    console.log(`  Query window: ${startsOnOrAfter} to ${startsBefore}`);
 
     // Create sync log entry
     const { data: syncLog } = await supabase
@@ -116,6 +125,11 @@ export async function POST(req: NextRequest) {
 
     for (const appointment of sortedAppointments) {
       try {
+        // Skip canceled appointments - they never happened
+        if (appointment.status === 'Canceled') {
+          continue;
+        }
+
         // Step 3a: Get the technician assignment for this job
         const assignmentResult = await getAppointmentAssignmentsByJobId(appointment.jobId);
         const assignments = assignmentResult.data || [];
@@ -187,7 +201,8 @@ export async function POST(req: NextRequest) {
 
         let gpsHistory: GPSHistoryPoint[] = [];
         try {
-          gpsHistory = await getVehicleGPSHistory(
+          // Uses segments endpoint for same-day data, history for past days
+          gpsHistory = await getVehicleGPSData(
             techData.verizon_vehicle_id,
             gpsStartTime,
             gpsEndTime
@@ -267,47 +282,38 @@ export async function POST(req: NextRequest) {
         }
 
         // Step 3h: Calculate variance and create discrepancy if late
-        let varianceMinutes: number | null = null;
-        let isLate = false;
-
+        // ONLY create discrepancies when we have actual GPS-verified arrival data
         if (arrival) {
-          varianceMinutes = differenceInMinutes(arrival.arrivalTime, scheduledTime);
-          isLate = varianceMinutes > 10; // More than 10 minutes late
-        } else if (new Date() > scheduledTime) {
-          // No arrival found and we're past scheduled time
-          varianceMinutes = differenceInMinutes(new Date(), scheduledTime);
-          isLate = true;
-        }
+          const varianceMinutes = differenceInMinutes(arrival.arrivalTime, scheduledTime);
+          const isLate = varianceMinutes > 10; // More than 10 minutes late
 
-        // Create discrepancy record if late
-        if (isLate && varianceMinutes !== null && varianceMinutes > 0) {
-          // actual_arrival is required by schema, use current time if no GPS arrival detected
-          const actualArrivalTime = arrival?.arrivalTime.toISOString() || new Date().toISOString();
+          if (isLate) {
+            const { error: discError } = await supabase
+              .from('arrival_discrepancies')
+              .upsert({
+                technician_id: techData.id,
+                job_id: jobData.id,
+                job_date: dateStr,
+                scheduled_arrival: appointment.start,
+                actual_arrival: arrival.arrivalTime.toISOString(),
+                variance_minutes: varianceMinutes,
+                is_late: true,
+                is_first_job: true,
+                notes: `GPS arrival at ${format(arrival.arrivalTime, 'h:mm a', { timeZone: EST_TIMEZONE })} - ${varianceMinutes}m late (${Math.round(arrival.distanceFeet)} ft from job)`,
+              }, {
+                onConflict: 'job_id',
+              });
 
-          const { error: discError } = await supabase
-            .from('arrival_discrepancies')
-            .upsert({
-              technician_id: techData.id,
-              job_id: jobData.id,
-              job_date: dateStr,
-              scheduled_arrival: appointment.start,
-              actual_arrival: actualArrivalTime,
-              variance_minutes: varianceMinutes,
-              is_late: true,
-              is_first_job: true,
-              notes: arrival
-                ? `GPS arrival at ${format(arrival.arrivalTime, 'h:mm a')} - ${varianceMinutes}m late (${Math.round(arrival.distanceFeet)} ft from job)`
-                : `No GPS arrival detected within ${ARRIVAL_RADIUS_FEET} feet - ${gpsHistory.length} GPS points checked`,
-            }, {
-              onConflict: 'job_id',
-            });
-
-          if (!discError) {
-            discrepanciesFound++;
-            console.log(`    ❌ LATE: ${varianceMinutes} minutes`);
+            if (!discError) {
+              discrepanciesFound++;
+              console.log(`    ❌ LATE: ${varianceMinutes} minutes`);
+            }
+          } else {
+            console.log(`    ✅ ON TIME: ${Math.abs(varianceMinutes)}m ${varianceMinutes < 0 ? 'early' : 'after scheduled'}`);
           }
-        } else if (arrival && varianceMinutes !== null) {
-          console.log(`    ✅ ON TIME: ${Math.abs(varianceMinutes)}m ${varianceMinutes < 0 ? 'early' : 'after scheduled'}`);
+        } else {
+          // No GPS arrival detected - log but don't create a discrepancy with fake data
+          console.log(`    ⚠️ NO GPS ARRIVAL DETECTED - cannot verify arrival time`);
         }
 
         results.push({

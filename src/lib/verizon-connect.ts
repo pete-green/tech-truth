@@ -164,6 +164,139 @@ export async function getDriver(driverId: string) {
   return verizonFetch(`/rad/v1/drivers/${driverId}`);
 }
 
+// Vehicle Segment interfaces for same-day data
+export interface SegmentLocation {
+  Latitude: number;
+  Longitude: number;
+  AddressLine1: string;
+  AddressLine2: string;
+  Locality: string;
+  AdministrativeArea: string;
+  PostalCode: string;
+  Country: string;
+}
+
+export interface VehicleSegment {
+  StartDateUtc: string;
+  EndDateUtc: string | null;
+  StartLocation: SegmentLocation;
+  EndLocation: SegmentLocation | null;
+  StartLocationIsPrivate: boolean;
+  EndLocationIsPrivate: boolean | null;
+  IsComplete: boolean;
+  DistanceKilometers: number | null;
+}
+
+export interface VehicleSegmentsResponse {
+  Driver: {
+    Number: string | null;
+    FirstName: string;
+    LastName: string;
+  };
+  Vehicle: {
+    Number: string;
+    Name: string;
+  };
+  Segments: VehicleSegment[];
+}
+
+/**
+ * Get vehicle segments (trips/stops) for a day
+ * This endpoint works for same-day data, unlike status/history
+ * @param vehicleNumber - The vehicle number (e.g., "2021")
+ * @param startDateUtc - ISO 8601 date timestamp for start of day
+ * @returns Vehicle segments data with trips and stops
+ */
+export async function getVehicleSegments(
+  vehicleNumber: string,
+  startDateUtc: string
+): Promise<VehicleSegmentsResponse> {
+  // API returns an array with one element containing the vehicle data
+  const response = await verizonFetch(`/rad/v1/vehicles/${vehicleNumber}/segments?startdateutc=${startDateUtc}`);
+  if (Array.isArray(response) && response.length > 0) {
+    return response[0];
+  }
+  return response;
+}
+
+/**
+ * Convert segments to GPS-like points for arrival detection
+ * Extracts end locations from each segment as "arrival points"
+ */
+export function segmentsToGPSPoints(segments: VehicleSegment[]): GPSHistoryPoint[] {
+  const points: GPSHistoryPoint[] = [];
+
+  for (const segment of segments) {
+    // Add end location as a GPS point (this is where they arrived/stopped)
+    if (segment.EndLocation && segment.EndDateUtc) {
+      points.push({
+        VehicleNumber: '',
+        VehicleName: '',
+        UpdateUtc: segment.EndDateUtc,
+        OdometerInKM: 0,
+        IsPrivate: segment.EndLocationIsPrivate || false,
+        DriverNumber: null,
+        FirstName: null,
+        LastName: null,
+        Address: {
+          AddressLine1: segment.EndLocation.AddressLine1,
+          AddressLine2: segment.EndLocation.AddressLine2,
+          Locality: segment.EndLocation.Locality,
+          AdministrativeArea: segment.EndLocation.AdministrativeArea,
+          PostalCode: segment.EndLocation.PostalCode,
+          Country: segment.EndLocation.Country,
+        },
+        Latitude: segment.EndLocation.Latitude,
+        Longitude: segment.EndLocation.Longitude,
+        Speed: 0,
+        BatteryLevel: null,
+      });
+    }
+  }
+
+  return points;
+}
+
+/**
+ * Smart GPS data fetcher - uses segments for same-day, history for past days
+ * @param vehicleNumber - The vehicle number
+ * @param startTime - ISO 8601 timestamp
+ * @param endTime - ISO 8601 timestamp
+ * @returns Array of GPS history points
+ */
+export async function getVehicleGPSData(
+  vehicleNumber: string,
+  startTime: string,
+  endTime: string
+): Promise<GPSHistoryPoint[]> {
+  const startDate = new Date(startTime);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const isToday = startDate >= today;
+
+  if (isToday) {
+    // Use segments endpoint for same-day data
+    try {
+      const todayStr = today.toISOString().split('T')[0] + 'T00:00:00Z';
+      const segmentsData = await getVehicleSegments(vehicleNumber, todayStr);
+      return segmentsToGPSPoints(segmentsData.Segments || []);
+    } catch (error) {
+      console.error('Segments endpoint failed, trying history:', error);
+      // Fall through to try history endpoint
+    }
+  }
+
+  // Use history endpoint for past days (or as fallback)
+  try {
+    return await getVehicleGPSHistory(vehicleNumber, startTime, endTime);
+  } catch (error) {
+    // If history also fails (500 error for today), return empty
+    console.error('GPS history fetch failed:', error);
+    return [];
+  }
+}
+
 export interface VehicleLocation {
   vehicleId: string;
   vehicleNumber: string;
