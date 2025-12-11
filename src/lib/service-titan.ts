@@ -136,19 +136,29 @@ export async function getJobs(params: {
 }
 
 // Get appointment assignments (which technicians are assigned to which appointments)
+// NOTE: The date filters on this endpoint filter by assignedOn (when tech was assigned),
+// NOT by appointment date. Use getAppointmentAssignmentsByJobId for specific jobs.
 export async function getAppointmentAssignments(params: {
-  startsOnOrAfter: string;
-  startsBefore: string;
+  startsOnOrAfter?: string;
+  startsBefore?: string;
+  jobId?: number;
   page?: number;
   pageSize?: number;
 }) {
   const queryParams = new URLSearchParams();
-  queryParams.append('startsOnOrAfter', params.startsOnOrAfter);
-  queryParams.append('startsBefore', params.startsBefore);
+  if (params.startsOnOrAfter) queryParams.append('startsOnOrAfter', params.startsOnOrAfter);
+  if (params.startsBefore) queryParams.append('startsBefore', params.startsBefore);
+  if (params.jobId) queryParams.append('jobId', String(params.jobId));
   if (params.page) queryParams.append('page', String(params.page));
   if (params.pageSize) queryParams.append('pageSize', String(params.pageSize));
 
   const endpoint = `/dispatch/v2/tenant/${ST_CONFIG.tenantId}/appointment-assignments?${queryParams.toString()}`;
+  return stFetch(endpoint);
+}
+
+// Get appointment assignment by job ID (preferred method for looking up tech assignments)
+export async function getAppointmentAssignmentsByJobId(jobId: number) {
+  const endpoint = `/dispatch/v2/tenant/${ST_CONFIG.tenantId}/appointment-assignments?jobId=${jobId}`;
   return stFetch(endpoint);
 }
 

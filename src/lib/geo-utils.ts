@@ -84,8 +84,24 @@ export function findArrivalPoint<T extends { Latitude: number; Longitude: number
 }
 
 /**
+ * Parse Verizon UTC timestamp (they return ISO format without Z suffix)
+ * e.g., "2025-12-10T13:09:55" should be interpreted as UTC
+ */
+function parseVerizonUtcTime(timestamp: string): Date {
+  // If it already ends with Z or has timezone info, parse as-is
+  if (timestamp.endsWith('Z') || timestamp.includes('+') || timestamp.includes('-', 10)) {
+    return new Date(timestamp);
+  }
+  // Otherwise, append Z to treat as UTC
+  return new Date(timestamp + 'Z');
+}
+
+/**
  * Find arrival time from GPS history for a job location
  * Filters GPS points to only those after the window start, then finds first arrival
+ *
+ * IMPORTANT: Verizon returns timestamps in UTC but without the Z suffix.
+ * We append Z when parsing to correctly interpret them as UTC.
  */
 export function findArrivalTime<T extends { Latitude: number; Longitude: number; UpdateUtc: string }>(
   gpsPoints: T[],
@@ -93,18 +109,19 @@ export function findArrivalTime<T extends { Latitude: number; Longitude: number;
   targetLon: number,
   windowStart: Date,
   radiusFeet: number = ARRIVAL_RADIUS_FEET
-): { arrivalTime: Date; point: T } | null {
-  // Sort by timestamp ascending
+): { arrivalTime: Date; point: T; distanceFeet: number } | null {
+  // Sort by timestamp ascending (parse as UTC)
   const sortedPoints = [...gpsPoints].sort(
-    (a, b) => new Date(a.UpdateUtc).getTime() - new Date(b.UpdateUtc).getTime()
+    (a, b) => parseVerizonUtcTime(a.UpdateUtc).getTime() - parseVerizonUtcTime(b.UpdateUtc).getTime()
   );
 
   // Find first point within radius that's after the window start
   for (const point of sortedPoints) {
-    const pointTime = new Date(point.UpdateUtc);
+    const pointTime = parseVerizonUtcTime(point.UpdateUtc);
     if (pointTime >= windowStart) {
-      if (isWithinRadius(point.Latitude, point.Longitude, targetLat, targetLon, radiusFeet)) {
-        return { arrivalTime: pointTime, point };
+      const distance = calculateDistanceFeet(point.Latitude, point.Longitude, targetLat, targetLon);
+      if (distance <= radiusFeet) {
+        return { arrivalTime: pointTime, point, distanceFeet: distance };
       }
     }
   }

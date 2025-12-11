@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { getTechnicians, getAppointmentAssignments, getJob, getLocation } from '@/lib/service-titan';
+import { getTechnicians, getAppointments, getAppointmentAssignmentsByJobId, getJob, getLocation } from '@/lib/service-titan';
 import { getVehicleGPSHistory, GPSHistoryPoint } from '@/lib/verizon-connect';
 import { startOfDay, endOfDay, format, parseISO, differenceInMinutes, subMinutes, addHours } from 'date-fns';
 import { findArrivalTime, ARRIVAL_RADIUS_FEET } from '@/lib/geo-utils';
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       await supabase.from('technicians').upsert(techUpserts, { onConflict: 'st_technician_id' });
     }
 
-    // Get technicians WITH trucks assigned
+    // Get technicians WITH trucks assigned from our database
     const { data: techsWithTrucks } = await supabase
       .from('technicians')
       .select('id, st_technician_id, name, verizon_vehicle_id')
@@ -89,73 +89,84 @@ export async function POST(req: NextRequest) {
 
     console.log(`Found ${techsWithTrucks?.length || 0} technicians with trucks assigned`);
 
-    // Step 2: Get appointment assignments
-    console.log('Step 2: Getting appointment assignments...');
-    const assignmentsResult = await getAppointmentAssignments({
+    // Step 2: Get APPOINTMENTS for the date (not appointment-assignments!)
+    // This correctly filters by appointment start time
+    console.log('Step 2: Getting appointments for the date...');
+    const appointmentsResult = await getAppointments({
       startsOnOrAfter,
       startsBefore,
       pageSize: 200,
     });
-    const assignments = assignmentsResult.data || [];
-    console.log(`Found ${assignments.length} assignments for ${dateStr}`);
+    const appointments = appointmentsResult.data || [];
+    console.log(`Found ${appointments.length} appointments for ${dateStr}`);
 
-    // Filter to techs with trucks and group by technician
-    const techAssignments: Record<number, any[]> = {};
-    for (const assignment of assignments) {
-      if (!techLookup.has(assignment.technicianId)) continue;
+    // Step 3: For each appointment, get the tech assignment and process
+    console.log('Step 3: Processing appointments with GPS verification...');
 
-      const techId = assignment.technicianId;
-      if (!techAssignments[techId]) {
-        techAssignments[techId] = [];
-      }
-      techAssignments[techId].push(assignment);
-    }
-
-    // Sort each tech's assignments by time
-    for (const techId of Object.keys(techAssignments)) {
-      techAssignments[parseInt(techId)].sort((a: any, b: any) =>
-        new Date(a.assignedOn).getTime() - new Date(b.assignedOn).getTime()
-      );
-    }
-
-    // Step 3: Process each technician's first job
-    console.log('Step 3: Processing first jobs with GPS history...');
-
+    // Group appointments by start time to identify first jobs
+    // We'll track which techs we've already processed their first job
+    const processedTechFirstJob = new Set<number>();
     let jobsProcessed = 0;
     let discrepanciesFound = 0;
 
-    for (const [stTechIdStr, techAssigns] of Object.entries(techAssignments)) {
-      const stTechId = parseInt(stTechIdStr);
-      const techData = techLookup.get(stTechId);
+    // Sort appointments by start time
+    const sortedAppointments = [...appointments].sort((a: any, b: any) =>
+      new Date(a.start).getTime() - new Date(b.start).getTime()
+    );
 
-      if (!techData || techAssigns.length === 0) continue;
-
-      // Get first job assignment
-      const firstAssignment = techAssigns[0];
-      const scheduledTime = new Date(firstAssignment.assignedOn);
-
+    for (const appointment of sortedAppointments) {
       try {
-        // Step 3a: Get job details from Service Titan
-        const jobDetails = await getJob(firstAssignment.jobId);
+        // Step 3a: Get the technician assignment for this job
+        const assignmentResult = await getAppointmentAssignmentsByJobId(appointment.jobId);
+        const assignments = assignmentResult.data || [];
+
+        if (assignments.length === 0) {
+          // No technician assigned to this job
+          continue;
+        }
+
+        // Get the active assignment (there might be multiple if tech was reassigned)
+        const assignment = assignments.find((a: any) => a.active) || assignments[0];
+        const stTechId = assignment.technicianId;
+
+        // Check if this tech has a truck assigned in our system
+        const techData = techLookup.get(stTechId);
+        if (!techData) {
+          // Tech doesn't have a truck assigned, skip
+          continue;
+        }
+
+        // If we only want first jobs and we've already processed this tech's first job, skip
+        if (firstJobOnly && processedTechFirstJob.has(stTechId)) {
+          continue;
+        }
+
+        // Mark this tech's first job as being processed
+        processedTechFirstJob.add(stTechId);
+
+        const scheduledTime = new Date(appointment.start);
+
+        // Step 3b: Get job details for location
+        const jobDetails = await getJob(appointment.jobId);
 
         if (!jobDetails.locationId) {
           errors.push({
             type: 'no_location',
             techName: techData.name,
-            jobId: firstAssignment.jobId,
+            jobId: appointment.jobId,
             error: 'Job has no locationId',
           });
           continue;
         }
 
-        // Step 3b: Get location with coordinates
+        // Step 3c: Get location with coordinates
         const location = await getLocation(jobDetails.locationId);
 
         if (!location.address?.latitude || !location.address?.longitude) {
           errors.push({
             type: 'no_coordinates',
             techName: techData.name,
-            jobId: firstAssignment.jobId,
+            jobId: appointment.jobId,
             error: 'Location has no coordinates',
           });
           continue;
@@ -165,7 +176,11 @@ export async function POST(req: NextRequest) {
         const jobLon = location.address.longitude;
         const jobAddress = `${location.address.street}, ${location.address.city}, ${location.address.state} ${location.address.zip}`;
 
-        // Step 3c: Get GPS history for this technician
+        console.log(`  Processing: ${techData.name} - Job ${appointment.jobId} at ${format(scheduledTime, 'h:mm a')}`);
+        console.log(`    Address: ${jobAddress}`);
+        console.log(`    Coordinates: ${jobLat}, ${jobLon}`);
+
+        // Step 3d: Get GPS history for this technician's truck
         // Window: 30 minutes before scheduled time to 2 hours after
         const gpsStartTime = subMinutes(scheduledTime, 30).toISOString();
         const gpsEndTime = addHours(scheduledTime, 2).toISOString();
@@ -177,6 +192,7 @@ export async function POST(req: NextRequest) {
             gpsStartTime,
             gpsEndTime
           );
+          console.log(`    GPS points: ${gpsHistory.length}`);
         } catch (gpsError: any) {
           errors.push({
             type: 'gps_fetch',
@@ -187,9 +203,7 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        console.log(`  ${techData.name}: Got ${gpsHistory.length} GPS points`);
-
-        // Step 3d: Find first arrival at job location
+        // Step 3e: Find first arrival at job location using GPS
         const arrival = findArrivalTime(
           gpsHistory,
           jobLat,
@@ -198,23 +212,29 @@ export async function POST(req: NextRequest) {
           ARRIVAL_RADIUS_FEET
         );
 
-        // Step 3e: Create/update job record
+        if (arrival) {
+          console.log(`    GPS Arrival: ${format(arrival.arrivalTime, 'h:mm:ss a')} (${Math.round(arrival.distanceFeet)} ft from job)`);
+        } else {
+          console.log(`    GPS Arrival: NOT DETECTED within ${ARRIVAL_RADIUS_FEET} feet`);
+        }
+
+        // Step 3f: Create/update job record
         const { data: jobData, error: jobError } = await supabase
           .from('jobs')
           .upsert({
-            st_job_id: firstAssignment.jobId,
-            st_appointment_id: firstAssignment.appointmentId,
+            st_job_id: appointment.jobId,
+            st_appointment_id: appointment.id,
             technician_id: techData.id,
-            job_number: jobDetails.jobNumber || `${firstAssignment.jobId}`,
+            job_number: jobDetails.jobNumber || `${appointment.jobId}`,
             customer_name: location.name || null,
             job_date: dateStr,
-            scheduled_start: firstAssignment.assignedOn,
+            scheduled_start: appointment.start,
             actual_arrival: arrival?.arrivalTime.toISOString() || null,
             job_address: jobAddress,
             job_latitude: jobLat,
             job_longitude: jobLon,
             is_first_job_of_day: true,
-            status: firstAssignment.status || 'Scheduled',
+            status: appointment.status || 'Scheduled',
             updated_at: new Date().toISOString(),
           }, {
             onConflict: 'st_job_id',
@@ -223,13 +243,13 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (jobError) {
-          errors.push({ type: 'job_upsert', jobId: firstAssignment.jobId, error: jobError.message });
+          errors.push({ type: 'job_upsert', jobId: appointment.jobId, error: jobError.message });
           continue;
         }
 
         jobsProcessed++;
 
-        // Step 3f: Store GPS events for this job
+        // Step 3g: Store GPS events for this job (sample, not all)
         if (gpsHistory.length > 0) {
           const gpsInserts = gpsHistory.slice(0, 50).map((point) => ({
             technician_id: techData.id,
@@ -246,7 +266,7 @@ export async function POST(req: NextRequest) {
           await supabase.from('gps_events').insert(gpsInserts);
         }
 
-        // Step 3g: Calculate variance and create discrepancy if late
+        // Step 3h: Calculate variance and create discrepancy if late
         let varianceMinutes: number | null = null;
         let isLate = false;
 
@@ -259,51 +279,53 @@ export async function POST(req: NextRequest) {
           isLate = true;
         }
 
-        // Create discrepancy record
+        // Create discrepancy record if late
         if (isLate && varianceMinutes !== null && varianceMinutes > 0) {
+          // actual_arrival is required by schema, use current time if no GPS arrival detected
+          const actualArrivalTime = arrival?.arrivalTime.toISOString() || new Date().toISOString();
+
           const { error: discError } = await supabase
             .from('arrival_discrepancies')
             .upsert({
               technician_id: techData.id,
               job_id: jobData.id,
               job_date: dateStr,
-              scheduled_arrival: firstAssignment.assignedOn,
-              actual_arrival: arrival?.arrivalTime.toISOString() || new Date().toISOString(),
+              scheduled_arrival: appointment.start,
+              actual_arrival: actualArrivalTime,
               variance_minutes: varianceMinutes,
               is_late: true,
               is_first_job: true,
               notes: arrival
-                ? `Arrived at ${format(arrival.arrivalTime, 'h:mm a')} - ${varianceMinutes}m late`
-                : `No arrival detected - GPS shows ${gpsHistory.length} points`,
+                ? `GPS arrival at ${format(arrival.arrivalTime, 'h:mm a')} - ${varianceMinutes}m late (${Math.round(arrival.distanceFeet)} ft from job)`
+                : `No GPS arrival detected within ${ARRIVAL_RADIUS_FEET} feet - ${gpsHistory.length} GPS points checked`,
             }, {
               onConflict: 'job_id',
             });
 
           if (!discError) {
             discrepanciesFound++;
-            console.log(`  LATE: ${techData.name} - ${varianceMinutes}m late to ${jobAddress.split(',')[0]}`);
+            console.log(`    ❌ LATE: ${varianceMinutes} minutes`);
           }
         } else if (arrival && varianceMinutes !== null) {
-          // On time or early - still record for tracking
-          console.log(`  ON TIME: ${techData.name} arrived ${Math.abs(varianceMinutes)}m ${varianceMinutes < 0 ? 'early' : 'late'}`);
+          console.log(`    ✅ ON TIME: ${Math.abs(varianceMinutes)}m ${varianceMinutes < 0 ? 'early' : 'after scheduled'}`);
         }
 
         results.push({
           techName: techData.name,
-          jobId: firstAssignment.jobId,
-          scheduledStart: firstAssignment.assignedOn,
+          jobId: appointment.jobId,
+          scheduledStart: appointment.start,
           actualArrival: arrival?.arrivalTime.toISOString() || null,
           varianceMinutes,
           isLate,
           jobAddress,
+          distanceFromJob: arrival?.distanceFeet,
         });
 
         recordsProcessed++;
       } catch (procError: any) {
         errors.push({
           type: 'processing',
-          techName: techData.name,
-          jobId: firstAssignment.jobId,
+          jobId: appointment.jobId,
           error: procError.message,
         });
       }
@@ -322,13 +344,14 @@ export async function POST(req: NextRequest) {
         .eq('id', syncLog.id);
     }
 
-    console.log(`Sync done: ${jobsProcessed} jobs, ${discrepanciesFound} late arrivals, ${errors.length} errors`);
+    console.log(`\nSync complete: ${jobsProcessed} jobs processed, ${discrepanciesFound} late arrivals detected, ${errors.length} errors`);
 
     return NextResponse.json({
       success: true,
       date: dateStr,
       summary: {
         techniciansWithTrucks: techsWithTrucks?.length || 0,
+        appointmentsFound: appointments.length,
         firstJobsProcessed: jobsProcessed,
         lateArrivals: discrepanciesFound,
         onTimeArrivals: jobsProcessed - discrepanciesFound,
