@@ -1,13 +1,8 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions';
 
-/**
- * Scheduled function to sync technician arrival data
- * Runs every 15 minutes during work hours (6 AM - 6 PM EST, Mon-Fri)
- *
- * Configure in netlify.toml:
- * [functions."scheduled-sync"]
- *   schedule = "*/15 6-18 * * 1-5"
- */
+// Scheduled function to sync technician arrival data
+// Runs every 15 minutes during work hours (6 AM - 6 PM EST, Mon-Fri)
+// Schedule configured in netlify.toml
 
 const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
   console.log('Scheduled sync triggered at:', new Date().toISOString());
