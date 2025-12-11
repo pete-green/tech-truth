@@ -1,29 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { getTechnicians, getAppointmentAssignments, getJob } from '@/lib/service-titan';
+import { getTechnicians, getAppointmentAssignments } from '@/lib/service-titan';
 import { getVehicleLocation } from '@/lib/verizon-connect';
 import { startOfDay, endOfDay, format, parseISO, differenceInMinutes } from 'date-fns';
 
-// Calculate distance between two points in meters using Haversine formula
-function calculateDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number {
-  const R = 6371e3; // Earth's radius in meters
-  const phi1 = (lat1 * Math.PI) / 180;
-  const phi2 = (lat2 * Math.PI) / 180;
-  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
-  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
-}
+export const maxDuration = 60; // Vercel/Netlify function timeout (up to 60s on pro)
 
 export async function POST(req: NextRequest) {
   const supabase = createServerClient();
@@ -41,7 +22,7 @@ export async function POST(req: NextRequest) {
     console.log(`Starting sync for date: ${dateStr}`);
 
     // Create sync log entry
-    const { data: syncLog, error: syncLogError } = await supabase
+    const { data: syncLog } = await supabase
       .from('sync_logs')
       .insert({
         sync_type: 'daily_arrival_check',
@@ -51,53 +32,58 @@ export async function POST(req: NextRequest) {
       .select()
       .single();
 
-    if (syncLogError) {
-      console.error('Error creating sync log:', syncLogError);
-    }
-
     const errors: any[] = [];
     let recordsProcessed = 0;
-    let jobsCreated = 0;
-    let discrepanciesFound = 0;
 
-    // Step 1: Sync technicians from Service Titan
+    // Step 1: Quick sync of technicians (just upsert, no individual fetches)
     console.log('Step 1: Syncing technicians...');
-    const techResult = await getTechnicians({ active: true, pageSize: 500 });
+    const techResult = await getTechnicians({ active: true, pageSize: 200 });
     const stTechnicians = techResult.data || [];
-    console.log(`Found ${stTechnicians.length} technicians in Service Titan`);
 
-    for (const tech of stTechnicians) {
-      const { error } = await supabase
-        .from('technicians')
-        .upsert({
-          st_technician_id: tech.id,
-          name: tech.name || `${tech.firstName || ''} ${tech.lastName || ''}`.trim(),
-          email: tech.email || null,
-          phone: tech.phone || tech.phoneNumber || null,
-          active: tech.active !== false,
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: 'st_technician_id',
-        });
+    // Batch upsert technicians
+    const techUpserts = stTechnicians.map((tech: any) => ({
+      st_technician_id: tech.id,
+      name: tech.name || `${tech.firstName || ''} ${tech.lastName || ''}`.trim(),
+      email: tech.email || null,
+      phone: tech.phone || tech.phoneNumber || null,
+      active: tech.active !== false,
+      updated_at: new Date().toISOString(),
+    }));
 
-      if (error) {
-        errors.push({ type: 'technician_sync', techId: tech.id, error: error.message });
-      }
+    if (techUpserts.length > 0) {
+      await supabase.from('technicians').upsert(techUpserts, { onConflict: 'st_technician_id' });
     }
 
-    // Step 2: Get appointment assignments (technician -> appointment mapping)
+    // Get technicians WITH trucks assigned from our database
+    const { data: techsWithTrucks } = await supabase
+      .from('technicians')
+      .select('id, st_technician_id, name, verizon_vehicle_id')
+      .not('verizon_vehicle_id', 'is', null);
+
+    const techLookup = new Map();
+    for (const t of techsWithTrucks || []) {
+      techLookup.set(t.st_technician_id, t);
+    }
+
+    console.log(`Found ${techsWithTrucks?.length || 0} technicians with trucks assigned`);
+
+    // Step 2: Get appointment assignments
     console.log('Step 2: Getting appointment assignments...');
     const assignmentsResult = await getAppointmentAssignments({
       startsOnOrAfter,
       startsBefore,
-      pageSize: 500,
+      pageSize: 200,
     });
     const assignments = assignmentsResult.data || [];
-    console.log(`Found ${assignments.length} appointment assignments for ${dateStr}`);
+    console.log(`Found ${assignments.length} assignments for ${dateStr}`);
 
-    // Group assignments by technician to identify first job
+    // Filter to only assignments for techs with trucks
+    const relevantAssignments = assignments.filter((a: any) => techLookup.has(a.technicianId));
+    console.log(`${relevantAssignments.length} assignments for techs with trucks`);
+
+    // Group by technician
     const techAssignments: Record<number, any[]> = {};
-    for (const assignment of assignments) {
+    for (const assignment of relevantAssignments) {
       const techId = assignment.technicianId;
       if (!techAssignments[techId]) {
         techAssignments[techId] = [];
@@ -105,89 +91,58 @@ export async function POST(req: NextRequest) {
       techAssignments[techId].push(assignment);
     }
 
-    // Step 3: Process each technician's assignments
-    console.log('Step 3: Processing assignments and checking GPS...');
+    // Sort each tech's assignments by time
+    for (const techId of Object.keys(techAssignments)) {
+      techAssignments[parseInt(techId)].sort((a: any, b: any) =>
+        new Date(a.assignedOn).getTime() - new Date(b.assignedOn).getTime()
+      );
+    }
+
+    // Step 3: Process assignments and get GPS data
+    console.log('Step 3: Processing assignments...');
+
+    let jobsCreated = 0;
+    let discrepanciesFound = 0;
 
     for (const [stTechIdStr, techAssigns] of Object.entries(techAssignments)) {
       const stTechId = parseInt(stTechIdStr);
+      const techData = techLookup.get(stTechId);
 
-      // Get technician from our database (to get verizon_vehicle_id)
-      const { data: techData } = await supabase
-        .from('technicians')
-        .select('id, name, verizon_vehicle_id')
-        .eq('st_technician_id', stTechId)
-        .single();
+      if (!techData) continue;
 
-      if (!techData) {
-        console.log(`Tech ${stTechId} not found in database, skipping`);
-        continue;
+      // Get GPS location ONCE per technician (not per job)
+      let gpsData = null;
+      try {
+        gpsData = await getVehicleLocation(techData.verizon_vehicle_id);
+      } catch (gpsError: any) {
+        errors.push({
+          type: 'gps_fetch',
+          vehicleId: techData.verizon_vehicle_id,
+          techName: techData.name,
+          error: gpsError.message,
+        });
       }
 
-      if (!techData.verizon_vehicle_id) {
-        console.log(`Tech ${techData.name} has no truck assigned, skipping GPS check`);
-        continue;
-      }
+      // Process first 5 jobs max per tech (to stay within timeout)
+      const jobsToProcess = techAssigns.slice(0, 5);
 
-      // Sort assignments by scheduled time to determine first job
-      techAssigns.sort((a: any, b: any) => {
-        // Use assignedOn as proxy for schedule order if no explicit start time
-        return new Date(a.assignedOn).getTime() - new Date(b.assignedOn).getTime();
-      });
-
-      // Process each assignment
-      for (let i = 0; i < techAssigns.length; i++) {
-        const assignment = techAssigns[i];
+      for (let i = 0; i < jobsToProcess.length; i++) {
+        const assignment = jobsToProcess[i];
         const isFirstJob = i === 0;
 
-        // Get job details to find the address/location
-        let jobDetails = null;
-        let jobLocation = null;
-
-        if (assignment.jobId) {
-          try {
-            jobDetails = await getJob(assignment.jobId);
-
-            // Try to get location from job
-            if (jobDetails?.location) {
-              jobLocation = {
-                address: jobDetails.location.address,
-                latitude: jobDetails.location.latitude,
-                longitude: jobDetails.location.longitude,
-              };
-            }
-          } catch (err: any) {
-            console.warn(`Could not fetch job ${assignment.jobId}:`, err.message);
-          }
-        }
-
-        // Build address string
-        const addressParts = [];
-        if (jobLocation?.address) {
-          const addr = jobLocation.address;
-          if (addr.street) addressParts.push(addr.street);
-          if (addr.city) addressParts.push(addr.city);
-          if (addr.state) addressParts.push(addr.state);
-          if (addr.zip) addressParts.push(addr.zip);
-        }
-        const jobAddress = addressParts.length > 0 ? addressParts.join(', ') : null;
-
-        // Create/update job record
+        // Create job record (without fetching full job details to save time)
         const { data: jobData, error: jobError } = await supabase
           .from('jobs')
           .upsert({
             st_job_id: assignment.jobId,
             st_appointment_id: assignment.appointmentId,
             technician_id: techData.id,
-            job_number: jobDetails?.jobNumber || `JOB-${assignment.jobId}`,
-            customer_name: jobDetails?.customer?.name || null,
+            job_number: `${assignment.jobId}`,
+            customer_name: null, // Skip fetching this
             job_date: dateStr,
-            scheduled_start: assignment.assignedOn, // Using assignedOn as scheduled time
-            scheduled_end: null,
-            job_address: jobAddress,
-            job_latitude: jobLocation?.latitude || null,
-            job_longitude: jobLocation?.longitude || null,
+            scheduled_start: assignment.assignedOn,
             is_first_job_of_day: isFirstJob,
-            status: assignment.status || 'scheduled',
+            status: assignment.status || 'Scheduled',
             updated_at: new Date().toISOString(),
           }, {
             onConflict: 'st_job_id',
@@ -196,94 +151,62 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (jobError) {
-          errors.push({
-            type: 'job_upsert',
-            jobId: assignment.jobId,
-            error: jobError.message,
-          });
+          errors.push({ type: 'job_upsert', jobId: assignment.jobId, error: jobError.message });
           continue;
         }
 
         jobsCreated++;
 
-        // Get current GPS location for this technician's truck
-        try {
-          const gpsData = await getVehicleLocation(techData.verizon_vehicle_id);
+        // If we have GPS data, store it and check for late arrivals
+        if (gpsData && isFirstJob) {
+          // Store GPS event
+          await supabase.from('gps_events').insert({
+            technician_id: techData.id,
+            job_id: jobData.id,
+            latitude: gpsData.Latitude,
+            longitude: gpsData.Longitude,
+            timestamp: gpsData.UpdateUTC,
+            speed: gpsData.Speed || null,
+            heading: gpsData.Direction || null,
+            address: gpsData.Address?.AddressLine1 || null,
+            event_type: 'sync_poll',
+          });
 
-          if (gpsData) {
-            // Store GPS event
-            await supabase.from('gps_events').insert({
-              technician_id: techData.id,
-              job_id: jobData.id,
-              latitude: gpsData.Latitude,
-              longitude: gpsData.Longitude,
-              timestamp: gpsData.UpdateUTC,
-              speed: gpsData.Speed || null,
-              heading: gpsData.Direction || null,
-              address: gpsData.Address?.AddressLine1 || null,
-              event_type: 'location_poll',
-            });
+          // Calculate if late based on current time vs scheduled
+          const now = new Date();
+          const scheduledTime = new Date(assignment.assignedOn);
+          const varianceMinutes = differenceInMinutes(now, scheduledTime);
 
-            // If we have job location, check if technician is at the job site
-            if (jobLocation?.latitude && jobLocation?.longitude) {
-              const distanceToJob = calculateDistance(
-                gpsData.Latitude,
-                gpsData.Longitude,
-                jobLocation.latitude,
-                jobLocation.longitude
-              );
+          // If it's past the scheduled time and they haven't completed
+          if (varianceMinutes > 10 && assignment.status !== 'Done' && assignment.status !== 'Completed') {
+            // Check if they're moving or stopped
+            const isStopped = gpsData.DisplayState === 'Stop' || gpsData.Speed === 0;
 
-              // If within 150 meters, consider them "at" the job
-              if (distanceToJob <= 150) {
-                const gpsTime = new Date(gpsData.UpdateUTC);
-                const scheduledTime = new Date(assignment.assignedOn);
-                const varianceMinutes = differenceInMinutes(gpsTime, scheduledTime);
+            // Create discrepancy if late to first job
+            const { error: discError } = await supabase
+              .from('arrival_discrepancies')
+              .upsert({
+                technician_id: techData.id,
+                job_id: jobData.id,
+                job_date: dateStr,
+                scheduled_arrival: assignment.assignedOn,
+                actual_arrival: gpsData.UpdateUTC,
+                variance_minutes: varianceMinutes,
+                is_late: true,
+                is_first_job: isFirstJob,
+                notes: `GPS: ${gpsData.Address?.Locality || 'Unknown'}, ${isStopped ? 'Stopped' : 'Moving'}`,
+              }, {
+                onConflict: 'job_id',
+              });
 
-                // Update job with actual arrival
-                await supabase
-                  .from('jobs')
-                  .update({
-                    actual_arrival: gpsData.UpdateUTC,
-                    arrival_variance_minutes: varianceMinutes,
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq('id', jobData.id);
-
-                // If late (positive variance), create discrepancy
-                if (varianceMinutes > 5) { // Allow 5 min grace period
-                  const { error: discError } = await supabase
-                    .from('arrival_discrepancies')
-                    .upsert({
-                      technician_id: techData.id,
-                      job_id: jobData.id,
-                      job_date: dateStr,
-                      scheduled_arrival: assignment.assignedOn,
-                      actual_arrival: gpsData.UpdateUTC,
-                      variance_minutes: varianceMinutes,
-                      is_late: true,
-                      is_first_job: isFirstJob,
-                    }, {
-                      onConflict: 'job_id',
-                    });
-
-                  if (!discError) {
-                    discrepanciesFound++;
-                    console.log(`Discrepancy found: ${techData.name} was ${varianceMinutes}m late to job ${assignment.jobId}`);
-                  }
-                }
-              }
+            if (!discError) {
+              discrepanciesFound++;
+              console.log(`Late: ${techData.name} is ${varianceMinutes}m past schedule (${isStopped ? 'stopped' : 'moving'})`);
             }
           }
-
-          recordsProcessed++;
-        } catch (gpsError: any) {
-          errors.push({
-            type: 'gps_fetch',
-            vehicleId: techData.verizon_vehicle_id,
-            techName: techData.name,
-            error: gpsError.message,
-          });
         }
+
+        recordsProcessed++;
       }
     }
 
@@ -300,13 +223,14 @@ export async function POST(req: NextRequest) {
         .eq('id', syncLog.id);
     }
 
-    console.log(`Sync completed: ${jobsCreated} jobs, ${discrepanciesFound} discrepancies, ${errors.length} errors`);
+    console.log(`Sync done: ${jobsCreated} jobs, ${discrepanciesFound} discrepancies, ${errors.length} errors`);
 
     return NextResponse.json({
       success: true,
       date: dateStr,
-      techniciansProcessed: stTechnicians.length,
-      assignmentsProcessed: assignments.length,
+      techniciansWithTrucks: techsWithTrucks?.length || 0,
+      assignmentsFound: assignments.length,
+      relevantAssignments: relevantAssignments.length,
       jobsCreated,
       discrepanciesFound,
       errors: errors.length > 0 ? errors : null,

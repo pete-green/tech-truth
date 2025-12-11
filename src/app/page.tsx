@@ -64,10 +64,17 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const [firstJobOnly, setFirstJobOnly] = useState(true);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  // Initialize date on client side only to prevent hydration mismatch
+  useEffect(() => {
+    setSelectedDate(format(new Date(), 'yyyy-MM-dd'));
+    setMounted(true);
+  }, []);
 
   const fetchDiscrepancies = useCallback(async () => {
     try {
@@ -117,6 +124,9 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    // Don't fetch until date is initialized
+    if (!selectedDate) return;
+
     const loadData = async () => {
       setLoading(true);
       await Promise.all([fetchDiscrepancies(), fetchTechPerformance(), fetchLastSync()]);
@@ -124,7 +134,7 @@ export default function Dashboard() {
     };
 
     loadData();
-  }, [fetchDiscrepancies, fetchTechPerformance, fetchLastSync]);
+  }, [fetchDiscrepancies, fetchTechPerformance, fetchLastSync, selectedDate]);
 
   // Set up real-time subscription
   useEffect(() => {
@@ -359,7 +369,7 @@ export default function Dashboard() {
         <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
           <div className="px-4 py-3 border-b bg-gray-50">
             <h2 className="font-semibold text-gray-900">
-              Arrival Discrepancies - {format(parseISO(selectedDate), 'MMMM d, yyyy')}
+              Arrival Discrepancies - {selectedDate ? format(parseISO(selectedDate), 'MMMM d, yyyy') : 'Loading...'}
             </h2>
           </div>
 
