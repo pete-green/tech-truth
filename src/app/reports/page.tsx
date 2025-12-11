@@ -1,0 +1,445 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { format, subDays, parseISO } from 'date-fns';
+import Link from 'next/link';
+import {
+  ArrowLeft,
+  Calendar,
+  Users,
+  Clock,
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  CheckCircle,
+  Download,
+  RefreshCw,
+} from 'lucide-react';
+
+interface TechnicianStats {
+  id: string;
+  name: string;
+  totalFirstJobs: number;
+  lateFirstJobs: number;
+  onTimePercentage: number;
+  avgLateMinutes: number;
+  trend: 'improving' | 'declining' | 'stable';
+}
+
+interface DayOfWeekStats {
+  total: number;
+  late: number;
+  percentage: number;
+}
+
+interface DailyTrend {
+  date: string;
+  totalLate: number;
+  avgVariance: number;
+}
+
+interface ReportData {
+  period: {
+    start: string;
+    end: string;
+    totalDays: number;
+  };
+  summary: {
+    totalFirstJobs: number;
+    lateFirstJobs: number;
+    onTimeFirstJobs: number;
+    onTimePercentage: number;
+    avgLateMinutes: number;
+    maxLateMinutes: number;
+  };
+  byTechnician: TechnicianStats[];
+  byDayOfWeek: Record<string, DayOfWeekStats>;
+  dailyTrend: DailyTrend[];
+}
+
+export default function ReportsPage() {
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<'7' | '14' | '30' | 'custom'>('30');
+  const [customStartDate, setCustomStartDate] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [customEndDate, setCustomEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const fetchReport = useCallback(async () => {
+    if (!mounted) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      let startDate: string;
+      let endDate = format(new Date(), 'yyyy-MM-dd');
+
+      if (dateRange === 'custom') {
+        startDate = customStartDate;
+        endDate = customEndDate;
+      } else {
+        startDate = format(subDays(new Date(), parseInt(dateRange)), 'yyyy-MM-dd');
+      }
+
+      const response = await fetch(`/api/reports?startDate=${startDate}&endDate=${endDate}`);
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error);
+
+      setReportData(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [dateRange, customStartDate, customEndDate, mounted]);
+
+  useEffect(() => {
+    fetchReport();
+  }, [fetchReport]);
+
+  const exportToCSV = () => {
+    if (!reportData) return;
+
+    const headers = ['Technician', 'Total First Jobs', 'Late First Jobs', 'On-Time %', 'Avg Late (min)'];
+    const rows = reportData.byTechnician.map(t => [
+      t.name,
+      t.totalFirstJobs,
+      t.lateFirstJobs,
+      `${t.onTimePercentage}%`,
+      t.avgLateMinutes,
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tech-truth-report-${reportData.period.start}-to-${reportData.period.end}.csv`;
+    a.click();
+  };
+
+  const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const dayLabels: Record<string, string> = {
+    monday: 'Mon',
+    tuesday: 'Tue',
+    wednesday: 'Wed',
+    thursday: 'Thu',
+    friday: 'Fri',
+    saturday: 'Sat',
+    sunday: 'Sun',
+  };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <RefreshCw className="w-8 h-8 text-gray-400 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link
+                href="/"
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              >
+                <ArrowLeft className="w-5 h-5" />
+                Back
+              </Link>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Performance Reports</h1>
+                <p className="text-sm text-gray-500">Technician arrival analysis</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={exportToCSV}
+                disabled={!reportData}
+                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                Export CSV
+              </button>
+              <button
+                onClick={fetchReport}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Date Range Selector */}
+        <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-gray-400" />
+              <span className="text-sm font-medium text-gray-700">Date Range:</span>
+            </div>
+            <div className="flex gap-2">
+              {(['7', '14', '30'] as const).map((days) => (
+                <button
+                  key={days}
+                  onClick={() => setDateRange(days)}
+                  className={`px-3 py-1.5 text-sm rounded-lg ${
+                    dateRange === days
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Last {days} days
+                </button>
+              ))}
+              <button
+                onClick={() => setDateRange('custom')}
+                className={`px-3 py-1.5 text-sm rounded-lg ${
+                  dateRange === 'custom'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Custom
+              </button>
+            </div>
+            {dateRange === 'custom' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="border rounded-lg px-3 py-1.5 text-sm"
+                />
+                <span className="text-gray-500">to</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="border rounded-lg px-3 py-1.5 text-sm"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="w-8 h-8 text-gray-400 animate-spin" />
+          </div>
+        ) : reportData ? (
+          <>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="bg-white rounded-lg shadow-sm p-4 border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Users className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {reportData.summary.totalFirstJobs}
+                    </p>
+                    <p className="text-sm text-gray-500">Total First Jobs</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow-sm p-4 border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {reportData.summary.onTimePercentage}%
+                    </p>
+                    <p className="text-sm text-gray-500">On-Time Rate</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow-sm p-4 border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {reportData.summary.lateFirstJobs}
+                    </p>
+                    <p className="text-sm text-gray-500">Late First Jobs</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg shadow-sm p-4 border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                    <Clock className="w-5 h-5 text-yellow-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {reportData.summary.avgLateMinutes}m
+                    </p>
+                    <p className="text-sm text-gray-500">Avg Late Time</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Day of Week Analysis */}
+            <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
+              <h2 className="font-semibold text-gray-900 mb-4">On-Time Rate by Day of Week</h2>
+              <div className="grid grid-cols-7 gap-2">
+                {dayNames.map((day) => {
+                  const stats = reportData.byDayOfWeek[day];
+                  const percentage = stats.percentage;
+                  const bgColor = percentage >= 90 ? 'bg-green-100' : percentage >= 75 ? 'bg-yellow-100' : 'bg-red-100';
+                  const textColor = percentage >= 90 ? 'text-green-700' : percentage >= 75 ? 'text-yellow-700' : 'text-red-700';
+
+                  return (
+                    <div key={day} className={`p-3 rounded-lg ${bgColor} text-center`}>
+                      <p className="text-xs font-medium text-gray-600">{dayLabels[day]}</p>
+                      <p className={`text-lg font-bold ${textColor}`}>{percentage}%</p>
+                      <p className="text-xs text-gray-500">{stats.total} jobs</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Technician Performance Table */}
+            <div className="bg-white rounded-lg shadow-sm border overflow-hidden mb-6">
+              <div className="px-4 py-3 border-b bg-gray-50">
+                <h2 className="font-semibold text-gray-900">Technician Performance</h2>
+              </div>
+              {reportData.byTechnician.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  No data available for this period
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Technician
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                          First Jobs
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                          Late
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                          On-Time %
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                          Avg Late
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {reportData.byTechnician.map((tech) => (
+                        <tr key={tech.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium text-gray-900">
+                            {tech.name}
+                          </td>
+                          <td className="px-4 py-3 text-center text-gray-900">
+                            {tech.totalFirstJobs}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span
+                              className={`inline-flex items-center px-2 py-1 rounded text-sm font-medium ${
+                                tech.lateFirstJobs === 0
+                                  ? 'bg-green-100 text-green-700'
+                                  : tech.lateFirstJobs <= 2
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-red-100 text-red-700'
+                              }`}
+                            >
+                              {tech.lateFirstJobs}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <div className="w-16 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className={`h-2 rounded-full ${
+                                    tech.onTimePercentage >= 90
+                                      ? 'bg-green-500'
+                                      : tech.onTimePercentage >= 75
+                                      ? 'bg-yellow-500'
+                                      : 'bg-red-500'
+                                  }`}
+                                  style={{ width: `${tech.onTimePercentage}%` }}
+                                />
+                              </div>
+                              <span className="text-sm text-gray-900">{tech.onTimePercentage}%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-center text-gray-900">
+                            {tech.avgLateMinutes > 0 ? `${tech.avgLateMinutes}m` : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Daily Trend */}
+            {reportData.dailyTrend.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border p-4">
+                <h2 className="font-semibold text-gray-900 mb-4">Daily Late Arrivals</h2>
+                <div className="h-32 flex items-end gap-1">
+                  {reportData.dailyTrend.map((day, index) => {
+                    const maxLate = Math.max(...reportData.dailyTrend.map(d => d.totalLate));
+                    const height = maxLate > 0 ? (day.totalLate / maxLate) * 100 : 0;
+
+                    return (
+                      <div
+                        key={day.date}
+                        className="flex-1 bg-red-400 rounded-t hover:bg-red-500 transition-colors"
+                        style={{ height: `${Math.max(height, 5)}%` }}
+                        title={`${format(parseISO(day.date), 'MMM d')}: ${day.totalLate} late (avg ${day.avgVariance}m)`}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between text-xs text-gray-500 mt-2">
+                  <span>{reportData.period.start}</span>
+                  <span>{reportData.period.end}</span>
+                </div>
+              </div>
+            )}
+          </>
+        ) : null}
+      </main>
+    </div>
+  );
+}

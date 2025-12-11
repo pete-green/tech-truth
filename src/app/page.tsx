@@ -15,6 +15,7 @@ import {
   ChevronUp,
   X,
   Settings,
+  BarChart3,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -250,6 +251,13 @@ export default function Dashboard() {
                 <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
                 {syncing ? 'Syncing...' : 'Sync Data'}
               </button>
+              <Link
+                href="/reports"
+                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 border rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <BarChart3 className="w-4 h-4" />
+                Reports
+              </Link>
               <Link
                 href="/settings"
                 className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 border rounded-lg hover:bg-gray-50 transition-colors"

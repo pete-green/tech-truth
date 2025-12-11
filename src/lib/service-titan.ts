@@ -152,4 +152,62 @@ export async function getAppointmentAssignments(params: {
   return stFetch(endpoint);
 }
 
+// Get location details (includes address with lat/lng coordinates)
+export async function getLocation(locationId: number) {
+  const endpoint = `/crm/v2/tenant/${ST_CONFIG.tenantId}/locations/${locationId}`;
+  return stFetch(endpoint);
+}
+
+// Get customer details
+export async function getCustomer(customerId: number) {
+  const endpoint = `/crm/v2/tenant/${ST_CONFIG.tenantId}/customers/${customerId}`;
+  return stFetch(endpoint);
+}
+
+// TypeScript interfaces for API responses
+export interface ServiceTitanLocation {
+  id: number;
+  customerId: number;
+  active: boolean;
+  name: string;
+  address: {
+    street: string;
+    unit: string;
+    city: string;
+    state: string;
+    zip: string;
+    country: string;
+    latitude: number;
+    longitude: number;
+  };
+  zoneId: number;
+  taxZoneId: number;
+}
+
+export interface ServiceTitanJob {
+  id: number;
+  jobNumber: string;
+  customerId: number;
+  locationId: number;
+  jobStatus: string;
+  businessUnitId: number;
+  jobTypeId: number;
+  priority: string;
+  appointmentCount: number;
+  firstAppointmentId: number;
+  lastAppointmentId: number;
+  createdOn: string;
+  modifiedOn: string;
+}
+
+export interface ServiceTitanAppointmentAssignment {
+  id: number;
+  technicianId: number;
+  technicianName: string;
+  appointmentId: number;
+  jobId: number;
+  assignedOn: string;
+  status: string;
+}
+
 export { ST_CONFIG };

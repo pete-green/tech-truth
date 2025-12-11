@@ -97,7 +97,8 @@ export async function getVehicleLocation(vehicleId: string) {
   return verizonFetch(`/rad/v1/vehicles/${vehicleId}/location`);
 }
 
-// Get vehicle location history for a time range
+// Get vehicle location history for a time range (OLD endpoint - doesn't work)
+// Keeping for backwards compatibility but use getVehicleGPSHistory instead
 export async function getVehicleLocationHistory(
   vehicleId: string,
   startTime: string,
@@ -108,6 +109,49 @@ export async function getVehicleLocationHistory(
     endTime,
   });
   return verizonFetch(`/rad/v1/vehicles/${vehicleId}/locations?${params.toString()}`);
+}
+
+// GPS History Point interface for the status/history endpoint
+export interface GPSHistoryPoint {
+  VehicleNumber: string;
+  VehicleName: string;
+  UpdateUtc: string;
+  OdometerInKM: number;
+  IsPrivate: boolean;
+  DriverNumber: string | null;
+  FirstName: string | null;
+  LastName: string | null;
+  Address: {
+    AddressLine1: string;
+    AddressLine2: string;
+    Locality: string;
+    AdministrativeArea: string;
+    PostalCode: string;
+    Country: string;
+  };
+  Latitude: number;
+  Longitude: number;
+  Speed: number;
+  BatteryLevel: number | null;
+}
+
+/**
+ * Get vehicle GPS history for a time range using the correct endpoint
+ * @param vehicleNumber - The vehicle number (e.g., "2021")
+ * @param startTime - ISO 8601 timestamp (e.g., "2025-12-11T06:00:00.000Z")
+ * @param endTime - ISO 8601 timestamp
+ * @returns Array of GPS history points
+ */
+export async function getVehicleGPSHistory(
+  vehicleNumber: string,
+  startTime: string,
+  endTime: string
+): Promise<GPSHistoryPoint[]> {
+  const params = new URLSearchParams({
+    startdatetimeutc: startTime,
+    enddatetimeutc: endTime,
+  });
+  return verizonFetch(`/rad/v1/vehicles/${vehicleNumber}/status/history?${params.toString()}`);
 }
 
 // Get driver information

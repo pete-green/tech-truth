@@ -7,3 +7,8 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Scheduled function for arrival sync
+# Runs every 15 minutes during work hours (6 AM - 6 PM EST, Mon-Fri)
+[functions."scheduled-sync"]
+  schedule = "*/15 11-23 * * 1-5"
