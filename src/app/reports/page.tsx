@@ -22,16 +22,19 @@ interface TechnicianStats {
   id: string;
   name: string;
   totalFirstJobs: number;
+  verifiedFirstJobs: number;
+  unverifiedFirstJobs: number;
   lateFirstJobs: number;
-  onTimePercentage: number;
+  onTimePercentage: number | null;
   avgLateMinutes: number;
   trend: 'improving' | 'declining' | 'stable';
+  hasInaccurateData: boolean;
 }
 
 interface DayOfWeekStats {
   total: number;
   late: number;
-  percentage: number;
+  percentage: number | null;
 }
 
 interface DailyTrend {
@@ -48,9 +51,11 @@ interface ReportData {
   };
   summary: {
     totalFirstJobs: number;
+    verifiedFirstJobs: number;
+    unverifiedFirstJobs: number;
     lateFirstJobs: number;
     onTimeFirstJobs: number;
-    onTimePercentage: number;
+    onTimePercentage: number | null;
     avgLateMinutes: number;
     maxLateMinutes: number;
   };
@@ -225,13 +230,16 @@ export default function ReportsPage() {
   const exportToCSV = () => {
     if (!reportData) return;
 
-    const headers = ['Technician', 'Total First Jobs', 'Late First Jobs', 'On-Time %', 'Avg Late (min)'];
+    const headers = ['Technician', 'Total First Jobs', 'Verified Jobs', 'Unverified Jobs', 'Late First Jobs', 'On-Time %', 'Avg Late (min)', 'Data Status'];
     const rows = reportData.byTechnician.map(t => [
       t.name,
       t.totalFirstJobs,
+      t.verifiedFirstJobs,
+      t.unverifiedFirstJobs,
       t.lateFirstJobs,
-      `${t.onTimePercentage}%`,
+      t.onTimePercentage !== null ? `${t.onTimePercentage}%` : 'N/A',
       t.avgLateMinutes,
+      t.hasInaccurateData ? 'Incomplete GPS Data' : 'Complete',
     ]);
 
     const csvContent = [
@@ -401,14 +409,29 @@ export default function ReportsPage() {
                 </div>
                 <div className="bg-white rounded-lg shadow-sm p-4 border">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                      reportData.summary.onTimePercentage !== null ? 'bg-green-100' : 'bg-orange-100'
+                    }`}>
+                      {reportData.summary.onTimePercentage !== null ? (
+                        <CheckCircle className="w-5 h-5 text-green-600" />
+                      ) : (
+                        <AlertTriangle className="w-5 h-5 text-orange-600" />
+                      )}
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-gray-900">
-                        {reportData.summary.onTimePercentage}%
+                        {reportData.summary.onTimePercentage !== null
+                          ? `${reportData.summary.onTimePercentage}%`
+                          : 'N/A'}
                       </p>
-                      <p className="text-sm text-gray-500">On-Time Rate</p>
+                      <p className="text-sm text-gray-500">
+                        On-Time Rate
+                        {reportData.summary.verifiedFirstJobs > 0 && reportData.summary.unverifiedFirstJobs > 0 && (
+                          <span className="text-orange-600 ml-1">
+                            ({reportData.summary.verifiedFirstJobs} verified)
+                          </span>
+                        )}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -447,13 +470,20 @@ export default function ReportsPage() {
                   {dayNames.map((day) => {
                     const stats = reportData.byDayOfWeek[day];
                     const percentage = stats.percentage;
-                    const bgColor = percentage >= 90 ? 'bg-green-100' : percentage >= 75 ? 'bg-yellow-100' : 'bg-red-100';
-                    const textColor = percentage >= 90 ? 'text-green-700' : percentage >= 75 ? 'text-yellow-700' : 'text-red-700';
+                    const hasData = percentage !== null && stats.total > 0;
+                    const bgColor = !hasData
+                      ? 'bg-gray-100'
+                      : percentage >= 90 ? 'bg-green-100' : percentage >= 75 ? 'bg-yellow-100' : 'bg-red-100';
+                    const textColor = !hasData
+                      ? 'text-gray-400'
+                      : percentage >= 90 ? 'text-green-700' : percentage >= 75 ? 'text-yellow-700' : 'text-red-700';
 
                     return (
                       <div key={day} className={`p-3 rounded-lg ${bgColor} text-center`}>
                         <p className="text-xs font-medium text-gray-600">{dayLabels[day]}</p>
-                        <p className={`text-lg font-bold ${textColor}`}>{percentage}%</p>
+                        <p className={`text-lg font-bold ${textColor}`}>
+                          {hasData ? `${percentage}%` : '-'}
+                        </p>
                         <p className="text-xs text-gray-500">{stats.total} jobs</p>
                       </div>
                     );

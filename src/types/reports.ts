@@ -2,7 +2,10 @@ export interface TechnicianFilterItem {
   id: string;
   name: string;
   totalFirstJobs: number;
+  verifiedFirstJobs: number;
+  unverifiedFirstJobs: number;
   lateFirstJobs: number;
+  hasInaccurateData: boolean;
 }
 
 export interface JobDetail {

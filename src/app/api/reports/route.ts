@@ -94,6 +94,7 @@ export async function GET(req: NextRequest) {
     const jobsWithVariance = (allFirstJobs || []).map(job => {
       let varianceMinutes: number | null = null;
       let isLate = false;
+      const hasGpsData = !!job.actual_arrival;
 
       if (job.scheduled_start && job.actual_arrival) {
         const scheduled = parseISO(job.scheduled_start);
@@ -102,17 +103,24 @@ export async function GET(req: NextRequest) {
         isLate = varianceMinutes > LATE_THRESHOLD_MINUTES;
       }
 
-      return { ...job, varianceMinutes, isLate };
+      return { ...job, varianceMinutes, isLate, hasGpsData };
     });
 
-    // Jobs with GPS-verified arrival that were late
-    const lateJobs = jobsWithVariance.filter(j => j.isLate);
+    // Only count jobs WITH GPS data for on-time/late calculations
+    const jobsWithGpsData = jobsWithVariance.filter(j => j.hasGpsData);
+    const jobsWithoutGpsData = jobsWithVariance.filter(j => !j.hasGpsData);
 
-    // Calculate summary metrics from actual job data
+    // Jobs with GPS-verified arrival that were late
+    const lateJobs = jobsWithGpsData.filter(j => j.isLate);
+
+    // Calculate summary metrics from GPS-verified job data only
     const totalFirstJobs = allFirstJobs?.length || 0;
+    const verifiedFirstJobs = jobsWithGpsData.length;
+    const unverifiedFirstJobs = jobsWithoutGpsData.length;
     const lateFirstJobs = lateJobs.length;
-    const onTimeFirstJobs = totalFirstJobs - lateFirstJobs;
-    const onTimePercentage = totalFirstJobs > 0 ? Math.round((onTimeFirstJobs / totalFirstJobs) * 100) : 100;
+    const onTimeFirstJobs = verifiedFirstJobs - lateFirstJobs;
+    // Only calculate percentage from verified jobs
+    const onTimePercentage = verifiedFirstJobs > 0 ? Math.round((onTimeFirstJobs / verifiedFirstJobs) * 100) : null;
 
     // Calculate late minutes from actual job variance
     const lateMinutesArray = lateJobs
@@ -132,10 +140,13 @@ export async function GET(req: NextRequest) {
       id: string;
       name: string;
       totalFirstJobs: number;
+      verifiedFirstJobs: number;
+      unverifiedFirstJobs: number;
       lateFirstJobs: number;
-      onTimePercentage: number;
+      onTimePercentage: number | null;
       avgLateMinutes: number;
       trend: 'improving' | 'declining' | 'stable';
+      hasInaccurateData: boolean;
     }> = {};
 
     // Initialize all technicians
@@ -144,10 +155,13 @@ export async function GET(req: NextRequest) {
         id: tech.id,
         name: tech.name,
         totalFirstJobs: 0,
+        verifiedFirstJobs: 0,
+        unverifiedFirstJobs: 0,
         lateFirstJobs: 0,
-        onTimePercentage: 100,
+        onTimePercentage: null,
         avgLateMinutes: 0,
         trend: 'stable',
+        hasInaccurateData: false,
       };
     }
 
@@ -157,12 +171,17 @@ export async function GET(req: NextRequest) {
       if (job.technician_id && byTechnician[job.technician_id]) {
         byTechnician[job.technician_id].totalFirstJobs++;
 
-        if (job.isLate && job.varianceMinutes !== null) {
-          byTechnician[job.technician_id].lateFirstJobs++;
-          if (!techLateMinutes[job.technician_id]) {
-            techLateMinutes[job.technician_id] = [];
+        if (job.hasGpsData) {
+          byTechnician[job.technician_id].verifiedFirstJobs++;
+          if (job.isLate && job.varianceMinutes !== null) {
+            byTechnician[job.technician_id].lateFirstJobs++;
+            if (!techLateMinutes[job.technician_id]) {
+              techLateMinutes[job.technician_id] = [];
+            }
+            techLateMinutes[job.technician_id].push(job.varianceMinutes);
           }
-          techLateMinutes[job.technician_id].push(job.varianceMinutes);
+        } else {
+          byTechnician[job.technician_id].unverifiedFirstJobs++;
         }
       }
     }
@@ -170,30 +189,34 @@ export async function GET(req: NextRequest) {
     // Calculate percentages and averages
     for (const techId of Object.keys(byTechnician)) {
       const tech = byTechnician[techId];
-      if (tech.totalFirstJobs > 0) {
-        tech.onTimePercentage = Math.round(((tech.totalFirstJobs - tech.lateFirstJobs) / tech.totalFirstJobs) * 100);
+      // Only calculate percentage from verified jobs
+      if (tech.verifiedFirstJobs > 0) {
+        tech.onTimePercentage = Math.round(((tech.verifiedFirstJobs - tech.lateFirstJobs) / tech.verifiedFirstJobs) * 100);
       }
       if (techLateMinutes[techId] && techLateMinutes[techId].length > 0) {
         tech.avgLateMinutes = Math.round(
           techLateMinutes[techId].reduce((sum, m) => sum + m, 0) / techLateMinutes[techId].length
         );
       }
+      // Flag as inaccurate if they have unverified jobs (missing GPS data)
+      tech.hasInaccurateData = tech.unverifiedFirstJobs > 0;
     }
 
-    // Calculate by day of week using actual job data
-    const byDayOfWeek: Record<string, { total: number; late: number; percentage: number }> = {
-      sunday: { total: 0, late: 0, percentage: 100 },
-      monday: { total: 0, late: 0, percentage: 100 },
-      tuesday: { total: 0, late: 0, percentage: 100 },
-      wednesday: { total: 0, late: 0, percentage: 100 },
-      thursday: { total: 0, late: 0, percentage: 100 },
-      friday: { total: 0, late: 0, percentage: 100 },
-      saturday: { total: 0, late: 0, percentage: 100 },
+    // Calculate by day of week using GPS-verified job data only
+    const byDayOfWeek: Record<string, { total: number; late: number; percentage: number | null }> = {
+      sunday: { total: 0, late: 0, percentage: null },
+      monday: { total: 0, late: 0, percentage: null },
+      tuesday: { total: 0, late: 0, percentage: null },
+      wednesday: { total: 0, late: 0, percentage: null },
+      thursday: { total: 0, late: 0, percentage: null },
+      friday: { total: 0, late: 0, percentage: null },
+      saturday: { total: 0, late: 0, percentage: null },
     };
 
     const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-    for (const job of jobsWithVariance) {
+    // Only count GPS-verified jobs for day of week stats
+    for (const job of jobsWithGpsData) {
       const dayOfWeek = new Date(job.job_date).getDay();
       byDayOfWeek[dayNames[dayOfWeek]].total++;
       if (job.isLate) {
@@ -209,11 +232,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Calculate daily trend using actual job data
+    // Calculate daily trend using GPS-verified job data only
     const dailyTrend: { date: string; totalLate: number; avgVariance: number }[] = [];
     const dailyStats: Record<string, { late: number; totalVariance: number }> = {};
 
-    for (const job of jobsWithVariance) {
+    for (const job of jobsWithGpsData) {
       if (job.isLate && job.varianceMinutes !== null) {
         if (!dailyStats[job.job_date]) {
           dailyStats[job.job_date] = { late: 0, totalVariance: 0 };
@@ -244,7 +267,10 @@ export async function GET(req: NextRequest) {
       id: t.id,
       name: t.name,
       totalFirstJobs: t.totalFirstJobs,
+      verifiedFirstJobs: t.verifiedFirstJobs,
+      unverifiedFirstJobs: t.unverifiedFirstJobs,
       lateFirstJobs: t.lateFirstJobs,
+      hasInaccurateData: t.hasInaccurateData,
     }));
 
     return NextResponse.json({
@@ -258,6 +284,8 @@ export async function GET(req: NextRequest) {
       },
       summary: {
         totalFirstJobs,
+        verifiedFirstJobs,
+        unverifiedFirstJobs,
         lateFirstJobs,
         onTimeFirstJobs,
         onTimePercentage,

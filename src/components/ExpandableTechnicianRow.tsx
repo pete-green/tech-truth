@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronUp, RefreshCw, AlertTriangle } from 'lucide-react';
 import DayJobsTable from './DayJobsTable';
 import { TechnicianDayDetails, JobDetail } from '@/types/reports';
 
@@ -8,10 +8,13 @@ interface TechnicianStats {
   id: string;
   name: string;
   totalFirstJobs: number;
+  verifiedFirstJobs: number;
+  unverifiedFirstJobs: number;
   lateFirstJobs: number;
-  onTimePercentage: number;
+  onTimePercentage: number | null;
   avgLateMinutes: number;
   trend: 'improving' | 'declining' | 'stable';
+  hasInaccurateData: boolean;
 }
 
 interface ExpandableTechnicianRowProps {
@@ -46,6 +49,15 @@ export default function ExpandableTechnicianRow({
               <ChevronDown className="w-4 h-4 text-gray-400" />
             )}
             <span className="font-medium text-gray-900">{technician.name}</span>
+            {technician.hasInaccurateData && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-700"
+                title={`${technician.unverifiedFirstJobs} of ${technician.totalFirstJobs} jobs missing GPS data`}
+              >
+                <AlertTriangle className="w-3 h-3" />
+                {technician.unverifiedFirstJobs} unverified
+              </span>
+            )}
           </div>
         </td>
         <td className="px-4 py-3 text-center text-gray-900">
@@ -65,21 +77,28 @@ export default function ExpandableTechnicianRow({
           </span>
         </td>
         <td className="px-4 py-3 text-center">
-          <div className="flex items-center justify-center gap-2">
-            <div className="w-16 bg-gray-200 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full ${
-                  technician.onTimePercentage >= 90
-                    ? 'bg-green-500'
-                    : technician.onTimePercentage >= 75
-                    ? 'bg-yellow-500'
-                    : 'bg-red-500'
-                }`}
-                style={{ width: `${technician.onTimePercentage}%` }}
-              />
+          {technician.onTimePercentage !== null ? (
+            <div className="flex items-center justify-center gap-2">
+              <div className="w-16 bg-gray-200 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full ${
+                    technician.onTimePercentage >= 90
+                      ? 'bg-green-500'
+                      : technician.onTimePercentage >= 75
+                      ? 'bg-yellow-500'
+                      : 'bg-red-500'
+                  }`}
+                  style={{ width: `${technician.onTimePercentage}%` }}
+                />
+              </div>
+              <span className="text-sm text-gray-900">{technician.onTimePercentage}%</span>
             </div>
-            <span className="text-sm text-gray-900">{technician.onTimePercentage}%</span>
-          </div>
+          ) : (
+            <div className="flex items-center justify-center gap-1">
+              <AlertTriangle className="w-4 h-4 text-orange-500" />
+              <span className="text-sm text-orange-600 font-medium">No GPS Data</span>
+            </div>
+          )}
         </td>
         <td className="px-4 py-3 text-center text-gray-900">
           {technician.avgLateMinutes > 0 ? `${technician.avgLateMinutes}m` : '-'}
