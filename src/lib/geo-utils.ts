@@ -235,20 +235,23 @@ export function isNearOffice(lat: number, lon: number): boolean {
  * Detect office visits from vehicle segments
  *
  * Logic:
- * - If first segment STARTS at office -> morning_departure (truck parked overnight)
- * - If segment ENDS at office -> potential visit
- *   - If it's the last segment of the day -> end_of_day
- *   - Otherwise -> mid_day_visit (track arrival, find next segment for departure)
+ * - Consolidate consecutive visits within 15 minutes into a single visit
+ * - If truck starts day at office -> morning_departure
+ * - If arrival is BEFORE first job scheduled time -> morning_departure (getting ready)
+ * - If arrival is AFTER 5 PM Eastern -> end_of_day
+ * - Otherwise -> mid_day_visit (the problematic ones)
  *
  * @param segments - Vehicle segments from Verizon API (should be for a single day)
+ * @param firstJobScheduledTime - When the tech's first job is scheduled (to distinguish morning from mid-day)
  * @returns Array of detected office visits
  */
-export function detectOfficeVisits(segments: VehicleSegment[]): OfficeVisit[] {
+export function detectOfficeVisits(
+  segments: VehicleSegment[],
+  firstJobScheduledTime?: Date
+): OfficeVisit[] {
   if (!segments || segments.length === 0) {
     return [];
   }
-
-  const visits: OfficeVisit[] = [];
 
   // Sort segments by start time
   const sortedSegments = [...segments]
@@ -261,58 +264,113 @@ export function detectOfficeVisits(segments: VehicleSegment[]): OfficeVisit[] {
     return [];
   }
 
+  // First, collect all raw office arrivals/departures
+  const rawVisits: { arrivalTime: Date; departureTime: Date | null }[] = [];
+
   // Check first segment - does it START at office? (truck parked overnight)
   const firstSegment = sortedSegments[0];
-  if (firstSegment.StartLocation && isNearOffice(firstSegment.StartLocation.Latitude, firstSegment.StartLocation.Longitude)) {
+  const startsAtOffice = firstSegment.StartLocation &&
+    isNearOffice(firstSegment.StartLocation.Latitude, firstSegment.StartLocation.Longitude);
+
+  if (startsAtOffice) {
     const departureTime = parseVerizonUtcTimestamp(firstSegment.StartDateUtc!);
-    visits.push({
-      arrivalTime: null, // We don't know when they arrived (previous day)
+    rawVisits.push({
+      arrivalTime: departureTime, // Use departure as arrival for morning (we don't know actual arrival)
       departureTime,
-      durationMinutes: null, // Can't calculate without arrival
-      visitType: 'morning_departure',
     });
   }
 
-  // Check each segment's end location for arrivals at office
+  // Find all segments that END at office
   for (let i = 0; i < sortedSegments.length; i++) {
     const segment = sortedSegments[i];
 
-    // Skip if no end location
     if (!segment.EndLocation || !segment.EndDateUtc) {
       continue;
     }
 
-    // Check if segment ends at office
     if (isNearOffice(segment.EndLocation.Latitude, segment.EndLocation.Longitude)) {
       const arrivalTime = parseVerizonUtcTimestamp(segment.EndDateUtc);
 
-      // Is this the last segment? -> end_of_day
-      if (i === sortedSegments.length - 1) {
-        visits.push({
-          arrivalTime,
-          departureTime: null, // Still there at end of data
-          durationMinutes: null,
-          visitType: 'end_of_day',
-        });
-      } else {
-        // Mid-day visit - find departure time from next segment's start
+      // Find departure time from next segment's start (if it exists and starts at office)
+      let departureTime: Date | null = null;
+      if (i < sortedSegments.length - 1) {
         const nextSegment = sortedSegments[i + 1];
-        let departureTime: Date | null = null;
-        let durationMinutes: number | null = null;
-
         if (nextSegment.StartDateUtc) {
           departureTime = parseVerizonUtcTimestamp(nextSegment.StartDateUtc);
-          durationMinutes = Math.round((departureTime.getTime() - arrivalTime.getTime()) / 60000);
         }
+      }
 
-        visits.push({
-          arrivalTime,
-          departureTime,
-          durationMinutes,
-          visitType: 'mid_day_visit',
-        });
+      rawVisits.push({ arrivalTime, departureTime });
+    }
+  }
+
+  // Consolidate visits within 15 minutes of each other
+  const CONSOLIDATION_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+  const consolidatedVisits: { arrivalTime: Date; departureTime: Date | null }[] = [];
+
+  for (const visit of rawVisits) {
+    const lastConsolidated = consolidatedVisits[consolidatedVisits.length - 1];
+
+    if (lastConsolidated) {
+      // Check if this visit is within 15 min of the last one's departure
+      const lastDeparture = lastConsolidated.departureTime || lastConsolidated.arrivalTime;
+      const timeDiff = visit.arrivalTime.getTime() - lastDeparture.getTime();
+
+      if (timeDiff <= CONSOLIDATION_WINDOW_MS) {
+        // Extend the existing visit
+        lastConsolidated.departureTime = visit.departureTime;
+        continue;
       }
     }
+
+    consolidatedVisits.push({ ...visit });
+  }
+
+  // Now classify each consolidated visit
+  const END_OF_DAY_HOUR = 17; // 5 PM Eastern
+  const visits: OfficeVisit[] = [];
+
+  for (let i = 0; i < consolidatedVisits.length; i++) {
+    const visit = consolidatedVisits[i];
+    const arrivalTime = visit.arrivalTime;
+    const departureTime = visit.departureTime;
+
+    // Calculate duration if we have both times
+    let durationMinutes: number | null = null;
+    if (departureTime) {
+      durationMinutes = Math.round((departureTime.getTime() - arrivalTime.getTime()) / 60000);
+    }
+
+    // Classify the visit
+    let visitType: OfficeVisitType;
+
+    // First visit of the day starting at office = morning_departure
+    if (i === 0 && startsAtOffice) {
+      visitType = 'morning_departure';
+    }
+    // Before first job scheduled time = morning (getting ready, loading truck, etc.)
+    else if (firstJobScheduledTime && arrivalTime.getTime() < firstJobScheduledTime.getTime()) {
+      visitType = 'morning_departure';
+    }
+    // After 5 PM = end of day
+    else if (arrivalTime.getUTCHours() >= (END_OF_DAY_HOUR + 5)) { // +5 for EST to UTC rough conversion
+      visitType = 'end_of_day';
+    }
+    // Last visit with no departure = end of day
+    else if (i === consolidatedVisits.length - 1 && !departureTime) {
+      visitType = 'end_of_day';
+    }
+    // Everything else = mid-day visit (the problem ones)
+    else {
+      visitType = 'mid_day_visit';
+    }
+
+    visits.push({
+      arrivalTime: visitType === 'morning_departure' && i === 0 && startsAtOffice ? null : arrivalTime,
+      departureTime,
+      durationMinutes,
+      visitType,
+    });
   }
 
   return visits;

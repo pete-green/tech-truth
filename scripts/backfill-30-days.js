@@ -21,7 +21,8 @@ async function syncDate(dateStr) {
     const result = await response.json();
 
     if (result.success) {
-      console.log(`  ✓ ${dateStr}: ${result.summary.firstJobsProcessed} jobs, ${result.summary.lateArrivals} late`);
+      const officeInfo = result.summary.midDayOfficeVisits > 0 ? `, ${result.summary.midDayOfficeVisits} office visits` : '';
+      console.log(`  ✓ ${dateStr}: ${result.summary.firstJobsProcessed} jobs, ${result.summary.lateArrivals} late${officeInfo}`);
       return result;
     } else {
       console.log(`  ✗ ${dateStr}: ${result.error}`);
@@ -48,6 +49,7 @@ async function main() {
     failed: 0,
     totalJobs: 0,
     totalLate: 0,
+    totalOfficeVisits: 0,
   };
 
   // Go back 30 days
@@ -68,6 +70,7 @@ async function main() {
       results.success++;
       results.totalJobs += result.summary.firstJobsProcessed || 0;
       results.totalLate += result.summary.lateArrivals || 0;
+      results.totalOfficeVisits += result.summary.midDayOfficeVisits || 0;
     } else {
       results.failed++;
     }
@@ -83,6 +86,7 @@ async function main() {
   console.log(`Days failed: ${results.failed}`);
   console.log(`Total jobs processed: ${results.totalJobs}`);
   console.log(`Total late arrivals: ${results.totalLate}`);
+  console.log(`Total mid-day office visits: ${results.totalOfficeVisits}`);
 }
 
 main().catch(console.error);

@@ -115,6 +115,8 @@ export async function POST(req: NextRequest) {
     // Group appointments by start time to identify first jobs
     // We'll track which techs we've already processed their first job
     const processedTechFirstJob = new Set<number>();
+    // Track first job scheduled time per technician (for office visit classification)
+    const techFirstJobTime = new Map<string, Date>(); // technician UUID -> first job scheduled time
     let jobsProcessed = 0;
     let discrepanciesFound = 0;
 
@@ -172,6 +174,10 @@ export async function POST(req: NextRequest) {
 
         // Mark this tech's first job as being processed (only for non-follow-up jobs)
         processedTechFirstJob.add(stTechId);
+
+        // Store first job scheduled time for office visit classification
+        // This helps distinguish morning departure (before first job) from mid-day visits
+        techFirstJobTime.set(techData.id, scheduledTime);
 
         if (!jobDetails.locationId) {
           errors.push({
@@ -394,6 +400,13 @@ export async function POST(req: NextRequest) {
     let officeVisitsDetected = 0;
     let midDayVisitsFound = 0;
 
+    // Clear existing office visits for this date before reprocessing
+    // This ensures we don't have stale/duplicate data from previous runs
+    await supabase
+      .from('office_visits')
+      .delete()
+      .eq('visit_date', dateStr);
+
     for (const tech of techsWithTrucks || []) {
       // Skip if no vehicle ID (shouldn't happen due to query filter, but TypeScript needs this)
       if (!tech.verizon_vehicle_id) continue;
@@ -414,7 +427,9 @@ export async function POST(req: NextRequest) {
         }
 
         // Detect office visits from segments
-        const officeVisits = detectOfficeVisits(segments);
+        // Pass the tech's first job scheduled time to help classify morning vs mid-day visits
+        const firstJobTime = techFirstJobTime.get(tech.id);
+        const officeVisits = detectOfficeVisits(segments, firstJobTime);
 
         if (officeVisits.length === 0) {
           continue;
