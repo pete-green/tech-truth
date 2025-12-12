@@ -16,6 +16,7 @@ import {
   Home,
   MapPin,
   Check,
+  Pencil,
 } from 'lucide-react';
 
 interface Technician {
@@ -59,6 +60,8 @@ export default function SettingsPage() {
   const [filterUnassigned, setFilterUnassigned] = useState(false);
   const [detectingHome, setDetectingHome] = useState<string | null>(null);
   const [homeSuggestions, setHomeSuggestions] = useState<Record<string, HomeLocationSuggestion | null>>({});
+  const [editingHomeAddress, setEditingHomeAddress] = useState<string | null>(null);
+  const [manualHomeAddress, setManualHomeAddress] = useState<string>('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -273,6 +276,106 @@ export default function SettingsPage() {
     }
   };
 
+  const startEditingHomeAddress = (techId: string, currentAddress: string | null) => {
+    setEditingHomeAddress(techId);
+    setManualHomeAddress(currentAddress || '');
+  };
+
+  const cancelEditingHomeAddress = () => {
+    setEditingHomeAddress(null);
+    setManualHomeAddress('');
+  };
+
+  const saveManualHomeAddress = async (techId: string) => {
+    if (!manualHomeAddress.trim()) {
+      setError('Please enter an address');
+      return;
+    }
+
+    setSaving(techId);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/technicians', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: techId,
+          home_address: manualHomeAddress.trim(),
+          // Clear lat/lon since we don't have coordinates for manual entry
+          home_latitude: null,
+          home_longitude: null,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      setTechnicians((prev) =>
+        prev.map((t) =>
+          t.id === techId
+            ? {
+                ...t,
+                home_address: manualHomeAddress.trim(),
+                home_latitude: null,
+                home_longitude: null,
+              }
+            : t
+        )
+      );
+
+      setEditingHomeAddress(null);
+      setManualHomeAddress('');
+      setSuccess('Home address saved');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const clearHomeAddress = async (techId: string) => {
+    setSaving(techId);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/technicians', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: techId,
+          home_address: null,
+          home_latitude: null,
+          home_longitude: null,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      setTechnicians((prev) =>
+        prev.map((t) =>
+          t.id === techId
+            ? {
+                ...t,
+                home_address: null,
+                home_latitude: null,
+                home_longitude: null,
+              }
+            : t
+        )
+      );
+
+      setSuccess('Home address cleared');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(null);
+    }
+  };
+
   // Get truck info by number
   const getTruckInfo = (truckNumber: string | null) => {
     if (!truckNumber) return null;
@@ -458,6 +561,7 @@ export default function SettingsPage() {
                     const homeSuggestion = homeSuggestions[tech.id];
                     const isOfficeEmployee = tech.exclude_from_office_visits === true;
                     const takesTruckHome = tech.takes_truck_home === true;
+                    const isEditingHome = editingHomeAddress === tech.id;
 
                     return (
                       <tr
@@ -560,6 +664,41 @@ export default function SettingsPage() {
                             <span className="text-sm text-gray-500">
                               Parks at office
                             </span>
+                          ) : isEditingHome ? (
+                            <div className="flex flex-col gap-2">
+                              <input
+                                type="text"
+                                value={manualHomeAddress}
+                                onChange={(e) => setManualHomeAddress(e.target.value)}
+                                placeholder="Enter home address..."
+                                className="border rounded px-2 py-1 text-sm w-full min-w-[200px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    saveManualHomeAddress(tech.id);
+                                  } else if (e.key === 'Escape') {
+                                    cancelEditingHomeAddress();
+                                  }
+                                }}
+                              />
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => saveManualHomeAddress(tech.id)}
+                                  disabled={isSaving}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:opacity-50"
+                                >
+                                  <Save className="w-3 h-3" />
+                                  Save
+                                </button>
+                                <button
+                                  onClick={cancelEditingHomeAddress}
+                                  disabled={isSaving}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
                           ) : isDetecting ? (
                             <div className="flex items-center gap-2 text-sm text-blue-600">
                               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -568,10 +707,25 @@ export default function SettingsPage() {
                           ) : tech.home_address ? (
                             <div className="flex items-center gap-2">
                               <MapPin className="w-4 h-4 text-green-600 flex-shrink-0" />
-                              <span className="text-sm text-gray-900 truncate max-w-[200px]" title={tech.home_address}>
+                              <span className="text-sm text-gray-900 truncate max-w-[180px]" title={tech.home_address}>
                                 {tech.home_address}
                               </span>
-                              <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <button
+                                onClick={() => startEditingHomeAddress(tech.id, tech.home_address)}
+                                disabled={isSaving}
+                                className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                title="Edit address"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => clearHomeAddress(tech.id)}
+                                disabled={isSaving}
+                                className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                title="Clear address"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
                             </div>
                           ) : homeSuggestion ? (
                             <div className="flex flex-col gap-1">
@@ -581,7 +735,7 @@ export default function SettingsPage() {
                                   {homeSuggestion.address}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs text-gray-500">
                                   {homeSuggestion.message}
                                 </span>
@@ -593,10 +747,17 @@ export default function SettingsPage() {
                                   <Check className="w-3 h-3" />
                                   Confirm
                                 </button>
+                                <button
+                                  onClick={() => startEditingHomeAddress(tech.id, null)}
+                                  disabled={isSaving}
+                                  className="text-xs text-blue-600 hover:text-blue-800 underline"
+                                >
+                                  Enter Different
+                                </button>
                               </div>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-sm text-gray-500">
                                 Could not detect
                               </span>
@@ -606,6 +767,13 @@ export default function SettingsPage() {
                                 className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50 disabled:no-underline"
                               >
                                 Retry
+                              </button>
+                              <button
+                                onClick={() => startEditingHomeAddress(tech.id, null)}
+                                disabled={isSaving}
+                                className="text-xs text-green-600 hover:text-green-800 underline"
+                              >
+                                Enter Manually
                               </button>
                             </div>
                           )}
