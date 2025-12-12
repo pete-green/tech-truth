@@ -87,7 +87,8 @@ export async function GET(req: NextRequest) {
 
     // Calculate late status directly from jobs (not just discrepancies)
     // This ensures consistency between summary and details
-    const LATE_THRESHOLD_MINUTES = 10;
+    // Any positive variance = late (arrived after scheduled time)
+    const LATE_THRESHOLD_MINUTES = 0;
 
     // Calculate variance for each job that has actual arrival data
     const jobsWithVariance = (allFirstJobs || []).map(job => {

@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
         const scheduled = parseISO(job.scheduled_start);
         const actual = parseISO(job.actual_arrival);
         varianceMinutes = differenceInMinutes(actual, scheduled);
-        isLate = varianceMinutes > 10; // Same threshold as sync-data
+        isLate = varianceMinutes > 0; // Any positive variance = late
       }
 
       const jobDetail: JobDetail = {
