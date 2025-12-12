@@ -1,4 +1,5 @@
 // Geo utilities for calculating distances between GPS coordinates
+import type { VehicleSegment } from './verizon-connect';
 
 /**
  * Calculate the distance between two points using the Haversine formula
@@ -122,6 +123,69 @@ export function findArrivalTime<T extends { Latitude: number; Longitude: number;
       const distance = calculateDistanceFeet(point.Latitude, point.Longitude, targetLat, targetLon);
       if (distance <= radiusFeet) {
         return { arrivalTime: pointTime, point, distanceFeet: distance };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Parse Verizon UTC timestamp - exported for use in other modules
+ */
+export function parseVerizonUtcTimestamp(timestamp: string): Date {
+  // If it already ends with Z or has timezone info, parse as-is
+  if (timestamp.endsWith('Z') || timestamp.includes('+') || timestamp.includes('-', 10)) {
+    return new Date(timestamp);
+  }
+  // Otherwise, append Z to treat as UTC
+  return new Date(timestamp + 'Z');
+}
+
+/**
+ * Find arrival from vehicle segments (trip end times)
+ * This is more accurate than GPS proximity because it uses the actual
+ * time the truck stopped (segment end = ignition off / parked)
+ *
+ * @param segments - Vehicle segments from Verizon API
+ * @param targetLat - Job location latitude
+ * @param targetLon - Job location longitude
+ * @param windowStart - Only consider segments ending after this time
+ * @param radiusFeet - Radius to consider as "at job location"
+ * @returns Arrival info or null if no matching segment found
+ */
+export function findArrivalFromSegments(
+  segments: VehicleSegment[],
+  targetLat: number,
+  targetLon: number,
+  windowStart: Date,
+  radiusFeet: number = ARRIVAL_RADIUS_FEET
+): { arrivalTime: Date; segment: VehicleSegment; distanceFeet: number } | null {
+  // Filter and sort segments by end time
+  const validSegments = segments
+    .filter(seg => seg.EndDateUtc && seg.EndLocation) // Must have end time and location
+    .sort((a, b) =>
+      parseVerizonUtcTimestamp(a.EndDateUtc!).getTime() - parseVerizonUtcTimestamp(b.EndDateUtc!).getTime()
+    );
+
+  // Find first segment that ends near the job location after window start
+  for (const segment of validSegments) {
+    const endTime = parseVerizonUtcTimestamp(segment.EndDateUtc!);
+
+    if (endTime >= windowStart) {
+      const distance = calculateDistanceFeet(
+        segment.EndLocation!.Latitude,
+        segment.EndLocation!.Longitude,
+        targetLat,
+        targetLon
+      );
+
+      if (distance <= radiusFeet) {
+        return {
+          arrivalTime: endTime,
+          segment,
+          distanceFeet: distance,
+        };
       }
     }
   }

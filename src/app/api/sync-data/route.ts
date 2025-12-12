@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { getTechnicians, getAppointments, getAppointmentAssignmentsByJobId, getJob, getLocation } from '@/lib/service-titan';
-import { getVehicleGPSData, GPSHistoryPoint } from '@/lib/verizon-connect';
+import { getVehicleGPSData, getVehicleSegments, GPSHistoryPoint, VehicleSegment } from '@/lib/verizon-connect';
 import { parseISO, differenceInMinutes, subMinutes, addHours, format } from 'date-fns';
 import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
-import { findArrivalTime, ARRIVAL_RADIUS_FEET } from '@/lib/geo-utils';
+import { findArrivalTime, findArrivalFromSegments, ARRIVAL_RADIUS_FEET } from '@/lib/geo-utils';
 
 export const maxDuration = 60; // Vercel/Netlify function timeout (up to 60s on pro)
 
@@ -199,38 +199,77 @@ export async function POST(req: NextRequest) {
         const gpsStartTime = subMinutes(scheduledTime, 30).toISOString();
         const gpsEndTime = addHours(scheduledTime, 2).toISOString();
 
+        // Check if this is same-day data (segments are more reliable for today)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const isSameDay = scheduledTime >= today;
+
         let gpsHistory: GPSHistoryPoint[] = [];
-        try {
-          // Uses segments endpoint for same-day data, history for past days
-          gpsHistory = await getVehicleGPSData(
-            techData.verizon_vehicle_id,
-            gpsStartTime,
-            gpsEndTime
-          );
-          console.log(`    GPS points: ${gpsHistory.length}`);
-        } catch (gpsError: any) {
-          errors.push({
-            type: 'gps_fetch',
-            techName: techData.name,
-            vehicleId: techData.verizon_vehicle_id,
-            error: gpsError.message,
-          });
-          continue;
+        let segments: VehicleSegment[] = [];
+        let segmentArrival: { arrivalTime: Date; segment: VehicleSegment; distanceFeet: number } | null = null;
+
+        // For same-day data, try segment-based arrival detection first (more accurate)
+        if (isSameDay) {
+          try {
+            const todayStr = format(today, 'yyyy-MM-dd') + 'T00:00:00Z';
+            const segmentsData = await getVehicleSegments(techData.verizon_vehicle_id, todayStr);
+            segments = segmentsData.Segments || [];
+            console.log(`    Vehicle segments: ${segments.length}`);
+
+            // Try to find arrival from segment end times (truck stopped)
+            segmentArrival = findArrivalFromSegments(
+              segments,
+              jobLat,
+              jobLon,
+              subMinutes(scheduledTime, 30),
+              ARRIVAL_RADIUS_FEET
+            );
+
+            if (segmentArrival) {
+              console.log(`    Truck stopped: ${formatInTimeZone(segmentArrival.arrivalTime, EST_TIMEZONE, 'h:mm:ss a')} EST (${Math.round(segmentArrival.distanceFeet)} ft from job)`);
+            }
+          } catch (segError: any) {
+            console.log(`    Segments fetch failed, falling back to GPS: ${segError.message}`);
+          }
         }
 
-        // Step 3e: Find first arrival at job location using GPS
-        const arrival = findArrivalTime(
+        // If no segment arrival found, fall back to GPS point-based detection
+        if (!segmentArrival) {
+          try {
+            gpsHistory = await getVehicleGPSData(
+              techData.verizon_vehicle_id,
+              gpsStartTime,
+              gpsEndTime
+            );
+            console.log(`    GPS points: ${gpsHistory.length}`);
+          } catch (gpsError: any) {
+            errors.push({
+              type: 'gps_fetch',
+              techName: techData.name,
+              vehicleId: techData.verizon_vehicle_id,
+              error: gpsError.message,
+            });
+            continue;
+          }
+        }
+
+        // Step 3e: Determine arrival - prefer segment-based (truck stopped) over GPS proximity
+        const arrival = segmentArrival || findArrivalTime(
           gpsHistory,
           jobLat,
           jobLon,
-          subMinutes(scheduledTime, 30), // Look from 30 min before scheduled
+          subMinutes(scheduledTime, 30),
           ARRIVAL_RADIUS_FEET
         );
 
+        // Determine if arrival was from segment (truck stopped) or GPS proximity
+        const arrivalType = segmentArrival ? 'segment' : 'gps';
+
         if (arrival) {
-          console.log(`    GPS Arrival: ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm:ss a')} EST (${Math.round(arrival.distanceFeet)} ft from job)`);
+          const typeLabel = arrivalType === 'segment' ? 'Truck stopped' : 'GPS Arrival';
+          console.log(`    ${typeLabel}: ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm:ss a')} EST (${Math.round(arrival.distanceFeet)} ft from job)`);
         } else {
-          console.log(`    GPS Arrival: NOT DETECTED within ${ARRIVAL_RADIUS_FEET} feet`);
+          console.log(`    Arrival: NOT DETECTED within ${ARRIVAL_RADIUS_FEET} feet`);
         }
 
         // Step 3f: Create/update job record
@@ -302,7 +341,7 @@ export async function POST(req: NextRequest) {
                 variance_minutes: varianceMinutes,
                 is_late: true,
                 is_first_job: true,
-                notes: `GPS arrival at ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm a')} - ${varianceMinutes}m late (${Math.round(arrival.distanceFeet)} ft from job)`,
+                notes: `${arrivalType === 'segment' ? 'Truck stopped' : 'GPS arrival'} at ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm a')} - ${varianceMinutes}m late (${Math.round(arrival.distanceFeet)} ft from job)`,
               }, {
                 onConflict: 'job_id',
               });
