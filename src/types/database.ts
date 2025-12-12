@@ -310,6 +310,7 @@ export type Database = {
           active: boolean | null
           created_at: string | null
           email: string | null
+          exclude_from_office_visits: boolean | null
           id: string
           name: string
           phone: string | null
@@ -322,6 +323,7 @@ export type Database = {
           active?: boolean | null
           created_at?: string | null
           email?: string | null
+          exclude_from_office_visits?: boolean | null
           id?: string
           name: string
           phone?: string | null
@@ -334,6 +336,7 @@ export type Database = {
           active?: boolean | null
           created_at?: string | null
           email?: string | null
+          exclude_from_office_visits?: boolean | null
           id?: string
           name?: string
           phone?: string | null

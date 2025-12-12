@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     // Get technicians WITH trucks assigned from our database
     const { data: techsWithTrucks } = await supabase
       .from('technicians')
-      .select('id, st_technician_id, name, verizon_vehicle_id')
+      .select('id, st_technician_id, name, verizon_vehicle_id, exclude_from_office_visits')
       .not('verizon_vehicle_id', 'is', null);
 
     const techLookup = new Map();
@@ -397,6 +397,9 @@ export async function POST(req: NextRequest) {
     for (const tech of techsWithTrucks || []) {
       // Skip if no vehicle ID (shouldn't happen due to query filter, but TypeScript needs this)
       if (!tech.verizon_vehicle_id) continue;
+
+      // Skip technicians excluded from office visit tracking (managers, office staff, etc.)
+      if (tech.exclude_from_office_visits) continue;
 
       try {
         // Get today's segments for this technician's vehicle
