@@ -284,6 +284,7 @@ export async function GET(req: NextRequest) {
         departure_time,
         duration_minutes,
         visit_type,
+        is_unnecessary,
         technicians (
           id,
           name
@@ -314,9 +315,12 @@ export async function GET(req: NextRequest) {
     const totalMinutesAtOffice = (officeVisits || [])
       .filter(v => v.duration_minutes !== null)
       .reduce((sum, v) => sum + (v.duration_minutes || 0), 0);
+    const totalUnnecessaryVisits = (officeVisits || [])
+      .filter(v => v.is_unnecessary === true)
+      .length;
 
     // Calculate visits per technician
-    const visitsByTech: Record<string, { technicianId: string; technicianName: string; visitCount: number; totalMinutes: number }> = {};
+    const visitsByTech: Record<string, { technicianId: string; technicianName: string; visitCount: number; totalMinutes: number; unnecessaryCount: number }> = {};
     for (const visit of officeVisits || []) {
       const techId = visit.technician_id;
       if (!techId) continue; // Skip if no technician_id
@@ -328,10 +332,14 @@ export async function GET(req: NextRequest) {
           technicianName: techName,
           visitCount: 0,
           totalMinutes: 0,
+          unnecessaryCount: 0,
         };
       }
       visitsByTech[techId].visitCount++;
       visitsByTech[techId].totalMinutes += visit.duration_minutes || 0;
+      if (visit.is_unnecessary) {
+        visitsByTech[techId].unnecessaryCount++;
+      }
     }
 
     // Sort by visit count descending
@@ -342,6 +350,7 @@ export async function GET(req: NextRequest) {
     const officeVisitSummary = {
       totalMidDayVisits,
       totalMinutesAtOffice,
+      totalUnnecessaryVisits,
       techsWithMostVisits,
     };
 

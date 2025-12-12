@@ -49,11 +49,13 @@ interface OfficeVisitTechSummary {
   technicianName: string;
   visitCount: number;
   totalMinutes: number;
+  unnecessaryCount: number;
 }
 
 interface OfficeVisitSummary {
   totalMidDayVisits: number;
   totalMinutesAtOffice: number;
+  totalUnnecessaryVisits: number;
   techsWithMostVisits: OfficeVisitTechSummary[];
 }
 
@@ -490,9 +492,14 @@ export default function ReportsPage() {
                         <h2 className="font-semibold text-gray-900">Office Visits During Work Hours</h2>
                         <p className="text-sm text-gray-500">
                           {reportData.officeVisitSummary.totalMidDayVisits} mid-day visits
+                          {reportData.officeVisitSummary.totalUnnecessaryVisits > 0 && (
+                            <span className="text-amber-600 ml-1" title="Take-home truck techs who went to office before their first job">
+                              ({reportData.officeVisitSummary.totalUnnecessaryVisits} unnecessary)
+                            </span>
+                          )}
                           {reportData.officeVisitSummary.totalMinutesAtOffice > 0 && (
                             <span className="text-purple-600 ml-1">
-                              ({Math.round(reportData.officeVisitSummary.totalMinutesAtOffice / 60)}h {reportData.officeVisitSummary.totalMinutesAtOffice % 60}m total)
+                              - {Math.round(reportData.officeVisitSummary.totalMinutesAtOffice / 60)}h {reportData.officeVisitSummary.totalMinutesAtOffice % 60}m total
                             </span>
                           )}
                         </p>
@@ -507,6 +514,9 @@ export default function ReportsPage() {
                           <tr>
                             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Technician</th>
                             <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Visits</th>
+                            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">
+                              <span title="Unnecessary visits - take-home truck went to office before first job">Unnecessary</span>
+                            </th>
                             <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total Time</th>
                             <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Avg/Visit</th>
                           </tr>
@@ -519,6 +529,16 @@ export default function ReportsPage() {
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                   {tech.visitCount}
                                 </span>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {tech.unnecessaryCount > 0 ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    {tech.unnecessaryCount}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
                               </td>
                               <td className="px-3 py-2 text-center text-gray-600">
                                 {tech.totalMinutes >= 60

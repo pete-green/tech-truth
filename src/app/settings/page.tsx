@@ -12,6 +12,10 @@ import {
   AlertTriangle,
   Search,
   X,
+  Building,
+  Home,
+  MapPin,
+  Check,
 } from 'lucide-react';
 
 interface Technician {
@@ -20,6 +24,21 @@ interface Technician {
   st_technician_id: number;
   verizon_vehicle_id: string | null;
   active: boolean;
+  exclude_from_office_visits: boolean | null;
+  takes_truck_home: boolean | null;
+  home_latitude: number | null;
+  home_longitude: number | null;
+  home_address: string | null;
+}
+
+interface HomeLocationSuggestion {
+  latitude: number;
+  longitude: number;
+  address: string;
+  confidence: 'high' | 'medium' | 'low';
+  message: string;
+  daysDetected: number;
+  totalDaysAnalyzed: number;
 }
 
 interface TruckInfo {
@@ -38,6 +57,8 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterUnassigned, setFilterUnassigned] = useState(false);
+  const [detectingHome, setDetectingHome] = useState<string | null>(null);
+  const [homeSuggestions, setHomeSuggestions] = useState<Record<string, HomeLocationSuggestion | null>>({});
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -102,6 +123,148 @@ export default function SettingsPage() {
       );
 
       setSuccess(`Truck assignment updated successfully`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleOfficeEmployeeToggle = async (techId: string, checked: boolean) => {
+    setSaving(techId);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/technicians', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: techId,
+          exclude_from_office_visits: checked,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      setTechnicians((prev) =>
+        prev.map((t) =>
+          t.id === techId ? { ...t, exclude_from_office_visits: checked } : t
+        )
+      );
+
+      setSuccess('Office employee setting updated');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleTakeHomeTruckToggle = async (techId: string, checked: boolean) => {
+    setSaving(techId);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/technicians', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: techId,
+          takes_truck_home: checked,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      setTechnicians((prev) =>
+        prev.map((t) =>
+          t.id === techId ? { ...t, takes_truck_home: checked } : t
+        )
+      );
+
+      setSuccess('Take home truck setting updated');
+      setTimeout(() => setSuccess(null), 3000);
+
+      // Auto-detect home location when enabled
+      if (checked) {
+        detectHomeLocation(techId);
+      } else {
+        // Clear home suggestion when disabled
+        setHomeSuggestions((prev) => ({ ...prev, [techId]: null }));
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const detectHomeLocation = async (techId: string) => {
+    setDetectingHome(techId);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/technicians/detect-home?technicianId=${techId}`);
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error);
+
+      setHomeSuggestions((prev) => ({
+        ...prev,
+        [techId]: data.suggestion,
+      }));
+
+      if (!data.suggestion) {
+        setSuccess(data.message || 'Could not detect home location');
+        setTimeout(() => setSuccess(null), 5000);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setDetectingHome(null);
+    }
+  };
+
+  const confirmHomeLocation = async (techId: string, suggestion: HomeLocationSuggestion) => {
+    setSaving(techId);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/technicians', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: techId,
+          home_latitude: suggestion.latitude,
+          home_longitude: suggestion.longitude,
+          home_address: suggestion.address,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      setTechnicians((prev) =>
+        prev.map((t) =>
+          t.id === techId
+            ? {
+                ...t,
+                home_latitude: suggestion.latitude,
+                home_longitude: suggestion.longitude,
+                home_address: suggestion.address,
+              }
+            : t
+        )
+      );
+
+      // Clear the suggestion since it's now confirmed
+      setHomeSuggestions((prev) => ({ ...prev, [techId]: null }));
+
+      setSuccess('Home location confirmed');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.message);
@@ -273,8 +436,14 @@ export default function SettingsPage() {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Assigned Truck
                     </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                      Office Employee
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                      Take Home Truck
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Truck Type
+                      Home Location
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Status
@@ -285,17 +454,29 @@ export default function SettingsPage() {
                   {filteredTechnicians.map((tech) => {
                     const truckInfo = getTruckInfo(tech.verizon_vehicle_id);
                     const isSaving = saving === tech.id;
+                    const isDetecting = detectingHome === tech.id;
+                    const homeSuggestion = homeSuggestions[tech.id];
+                    const isOfficeEmployee = tech.exclude_from_office_visits === true;
+                    const takesTruckHome = tech.takes_truck_home === true;
 
                     return (
                       <tr
                         key={tech.id}
                         className={`hover:bg-gray-50 ${
-                          !tech.verizon_vehicle_id ? 'bg-yellow-50' : ''
+                          isOfficeEmployee
+                            ? 'bg-blue-50'
+                            : !tech.verizon_vehicle_id
+                            ? 'bg-yellow-50'
+                            : ''
                         }`}
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <User className="w-4 h-4 text-gray-400" />
+                            {isOfficeEmployee ? (
+                              <Building className="w-4 h-4 text-blue-500" />
+                            ) : (
+                              <User className="w-4 h-4 text-gray-400" />
+                            )}
                             <span className="font-medium text-gray-900">
                               {tech.name}
                             </span>
@@ -342,8 +523,92 @@ export default function SettingsPage() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {truckInfo?.description || '-'}
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isOfficeEmployee}
+                            onChange={(e) =>
+                              handleOfficeEmployeeToggle(tech.id, e.target.checked)
+                            }
+                            disabled={isSaving}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                            title="Office employee - excluded from office visit tracking"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={takesTruckHome}
+                            onChange={(e) =>
+                              handleTakeHomeTruckToggle(tech.id, e.target.checked)
+                            }
+                            disabled={isSaving || isOfficeEmployee}
+                            className="rounded border-gray-300 text-green-600 focus:ring-green-500 w-4 h-4 disabled:opacity-50"
+                            title={
+                              isOfficeEmployee
+                                ? 'Not applicable for office employees'
+                                : 'Tech takes their truck home'
+                            }
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          {isOfficeEmployee ? (
+                            <span className="text-sm text-gray-400 italic">
+                              N/A (Office Employee)
+                            </span>
+                          ) : !takesTruckHome ? (
+                            <span className="text-sm text-gray-500">
+                              Parks at office
+                            </span>
+                          ) : isDetecting ? (
+                            <div className="flex items-center gap-2 text-sm text-blue-600">
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              <span>Detecting...</span>
+                            </div>
+                          ) : tech.home_address ? (
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <span className="text-sm text-gray-900 truncate max-w-[200px]" title={tech.home_address}>
+                                {tech.home_address}
+                              </span>
+                              <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                            </div>
+                          ) : homeSuggestion ? (
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                <span className="text-sm text-gray-700 truncate max-w-[180px]" title={homeSuggestion.address}>
+                                  {homeSuggestion.address}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500">
+                                  {homeSuggestion.message}
+                                </span>
+                                <button
+                                  onClick={() => confirmHomeLocation(tech.id, homeSuggestion)}
+                                  disabled={isSaving}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded transition-colors"
+                                >
+                                  <Check className="w-3 h-3" />
+                                  Confirm
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-500">
+                                Could not detect
+                              </span>
+                              <button
+                                onClick={() => detectHomeLocation(tech.id)}
+                                disabled={isSaving || !tech.verizon_vehicle_id}
+                                className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50 disabled:no-underline"
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           {tech.verizon_vehicle_id ? (

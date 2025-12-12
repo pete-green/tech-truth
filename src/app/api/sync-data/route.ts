@@ -4,7 +4,7 @@ import { getTechnicians, getAppointments, getAppointmentAssignmentsByJobId, getJ
 import { getVehicleGPSData, getVehicleSegments, GPSHistoryPoint, VehicleSegment } from '@/lib/verizon-connect';
 import { parseISO, differenceInMinutes, subMinutes, addHours, format } from 'date-fns';
 import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
-import { findArrivalTime, findArrivalFromSegments, ARRIVAL_RADIUS_FEET, detectOfficeVisits } from '@/lib/geo-utils';
+import { findArrivalTime, findArrivalFromSegments, ARRIVAL_RADIUS_FEET, detectOfficeVisits, TechOfficeConfig } from '@/lib/geo-utils';
 
 export const maxDuration = 60; // Vercel/Netlify function timeout (up to 60s on pro)
 
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     // Get technicians WITH trucks assigned from our database
     const { data: techsWithTrucks } = await supabase
       .from('technicians')
-      .select('id, st_technician_id, name, verizon_vehicle_id, exclude_from_office_visits')
+      .select('id, st_technician_id, name, verizon_vehicle_id, exclude_from_office_visits, takes_truck_home, home_latitude, home_longitude')
       .not('verizon_vehicle_id', 'is', null);
 
     const techLookup = new Map();
@@ -399,6 +399,7 @@ export async function POST(req: NextRequest) {
     console.log('\nStep 4: Detecting office visits...');
     let officeVisitsDetected = 0;
     let midDayVisitsFound = 0;
+    let unnecessaryVisitsFound = 0;
 
     // Clear existing office visits for this date before reprocessing
     // This ensures we don't have stale/duplicate data from previous runs
@@ -428,8 +429,15 @@ export async function POST(req: NextRequest) {
 
         // Detect office visits from segments
         // Pass the tech's first job scheduled time to help classify morning vs mid-day visits
+        // Also pass tech config for unnecessary visit detection
         const firstJobTime = techFirstJobTime.get(tech.id);
-        const officeVisits = detectOfficeVisits(segments, firstJobTime);
+        const techConfig: TechOfficeConfig = {
+          takesTruckHome: tech.takes_truck_home === true,
+          homeLocation: tech.home_latitude && tech.home_longitude
+            ? { lat: tech.home_latitude, lon: tech.home_longitude }
+            : null,
+        };
+        const officeVisits = detectOfficeVisits(segments, firstJobTime, techConfig);
 
         if (officeVisits.length === 0) {
           continue;
@@ -449,15 +457,23 @@ export async function POST(req: NextRequest) {
               departure_time: visit.departureTime?.toISOString() || null,
               duration_minutes: visit.durationMinutes,
               visit_type: visit.visitType,
+              is_unnecessary: visit.isUnnecessary || false,
             }, {
               onConflict: 'technician_id,visit_date,arrival_time',
             });
 
           if (!visitError) {
             officeVisitsDetected++;
+            if (visit.isUnnecessary) {
+              unnecessaryVisitsFound++;
+            }
             if (visit.visitType === 'mid_day_visit') {
               midDayVisitsFound++;
-              console.log(`  ${tech.name}: Mid-day visit - ${visit.durationMinutes || '?'} min`);
+              if (visit.isUnnecessary) {
+                console.log(`  ${tech.name}: Mid-day visit (UNNECESSARY) - ${visit.durationMinutes || '?'} min - take-home truck went to office before first job`);
+              } else {
+                console.log(`  ${tech.name}: Mid-day visit - ${visit.durationMinutes || '?'} min`);
+              }
             }
           }
         }
@@ -470,7 +486,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    console.log(`Office visits detected: ${officeVisitsDetected} total, ${midDayVisitsFound} mid-day`);
+    console.log(`Office visits detected: ${officeVisitsDetected} total, ${midDayVisitsFound} mid-day, ${unnecessaryVisitsFound} unnecessary`);
 
     // Update sync log
     if (syncLog) {
@@ -485,7 +501,7 @@ export async function POST(req: NextRequest) {
         .eq('id', syncLog.id);
     }
 
-    console.log(`\nSync complete: ${jobsProcessed} jobs processed, ${discrepanciesFound} late arrivals detected, ${midDayVisitsFound} mid-day office visits, ${errors.length} errors`);
+    console.log(`\nSync complete: ${jobsProcessed} jobs processed, ${discrepanciesFound} late arrivals detected, ${midDayVisitsFound} mid-day office visits (${unnecessaryVisitsFound} unnecessary), ${errors.length} errors`);
 
     return NextResponse.json({
       success: true,
@@ -498,6 +514,7 @@ export async function POST(req: NextRequest) {
         onTimeArrivals: jobsProcessed - discrepanciesFound,
         officeVisitsDetected,
         midDayOfficeVisits: midDayVisitsFound,
+        unnecessaryOfficeVisits: unnecessaryVisitsFound,
         errors: errors.length,
       },
       results,

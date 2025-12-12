@@ -216,6 +216,7 @@ export interface OfficeVisit {
   departureTime: Date | null;  // null for end_of_day
   durationMinutes: number | null;
   visitType: OfficeVisitType;
+  isUnnecessary?: boolean;     // Flag for take-home truck techs who stopped at office before first job
 }
 
 /**
@@ -232,6 +233,14 @@ export function isNearOffice(lat: number, lon: number): boolean {
 }
 
 /**
+ * Technician configuration for office visit detection
+ */
+export interface TechOfficeConfig {
+  takesTruckHome?: boolean;
+  homeLocation?: { lat: number; lon: number } | null;
+}
+
+/**
  * Detect office visits from vehicle segments
  *
  * Logic:
@@ -240,14 +249,17 @@ export function isNearOffice(lat: number, lon: number): boolean {
  * - If arrival is BEFORE first job scheduled time -> morning_departure (getting ready)
  * - If arrival is AFTER 5 PM Eastern -> end_of_day
  * - Otherwise -> mid_day_visit (the problematic ones)
+ * - If tech takes truck home AND has first job AND went to office first -> isUnnecessary = true
  *
  * @param segments - Vehicle segments from Verizon API (should be for a single day)
  * @param firstJobScheduledTime - When the tech's first job is scheduled (to distinguish morning from mid-day)
+ * @param techConfig - Optional technician configuration (takes truck home, home location)
  * @returns Array of detected office visits
  */
 export function detectOfficeVisits(
   segments: VehicleSegment[],
-  firstJobScheduledTime?: Date
+  firstJobScheduledTime?: Date,
+  techConfig?: TechOfficeConfig
 ): OfficeVisit[] {
   if (!segments || segments.length === 0) {
     return [];
@@ -345,12 +357,27 @@ export function detectOfficeVisits(
     let visitType: OfficeVisitType;
 
     // First visit of the day starting at office = morning_departure
+    // Determine if this is an unnecessary visit (take-home truck went to office before first job)
+    let isUnnecessary = false;
+
     if (i === 0 && startsAtOffice) {
       visitType = 'morning_departure';
+      // If tech takes truck home but started at office, that's expected (they might park at office sometimes)
+      // BUT if they have a first job scheduled, why didn't they go straight there?
+      if (techConfig?.takesTruckHome && firstJobScheduledTime) {
+        visitType = 'mid_day_visit'; // Reclassify as problematic
+        isUnnecessary = true;
+      }
     }
     // Before first job scheduled time = morning (getting ready, loading truck, etc.)
     else if (firstJobScheduledTime && arrivalTime.getTime() < firstJobScheduledTime.getTime()) {
-      visitType = 'morning_departure';
+      // If tech takes truck home and went to office before first job, it's unnecessary
+      if (techConfig?.takesTruckHome) {
+        visitType = 'mid_day_visit'; // Reclassify as problematic
+        isUnnecessary = true;
+      } else {
+        visitType = 'morning_departure';
+      }
     }
     // After 5 PM = end of day
     else if (arrivalTime.getUTCHours() >= (END_OF_DAY_HOUR + 5)) { // +5 for EST to UTC rough conversion
@@ -370,8 +397,130 @@ export function detectOfficeVisits(
       departureTime,
       durationMinutes,
       visitType,
+      isUnnecessary: isUnnecessary || undefined,
     });
   }
 
   return visits;
+}
+
+/**
+ * Home location suggestion from GPS analysis
+ */
+export interface HomeLocationSuggestion {
+  latitude: number;
+  longitude: number;
+  address: string;
+  confidence: 'high' | 'medium' | 'low';
+  daysDetected: number;
+  totalDaysAnalyzed: number;
+}
+
+/**
+ * Daily first segment data for home detection
+ */
+export interface DailyFirstSegment {
+  date: string;
+  startLat: number;
+  startLon: number;
+  address: string;
+}
+
+/**
+ * Detect home location from GPS patterns
+ * Analyzes where the truck starts each day to suggest likely home location
+ *
+ * @param dailyFirstSegments - First segment of each day with start location
+ * @returns Home location suggestion or null if no consistent pattern found
+ */
+export function detectHomeLocation(
+  dailyFirstSegments: DailyFirstSegment[]
+): HomeLocationSuggestion | null {
+  if (!dailyFirstSegments || dailyFirstSegments.length < 5) {
+    // Need at least 5 days of data for meaningful analysis
+    return null;
+  }
+
+  // Filter out days that start at the office (we want home starts only)
+  const nonOfficeStarts = dailyFirstSegments.filter(
+    seg => !isNearOffice(seg.startLat, seg.startLon)
+  );
+
+  if (nonOfficeStarts.length < 3) {
+    // Not enough non-office starts to detect home
+    return null;
+  }
+
+  // Cluster locations that are within 500 feet of each other
+  const CLUSTER_RADIUS_FEET = 500;
+  const clusters: { center: DailyFirstSegment; members: DailyFirstSegment[] }[] = [];
+
+  for (const segment of nonOfficeStarts) {
+    let foundCluster = false;
+
+    for (const cluster of clusters) {
+      const distance = calculateDistanceFeet(
+        segment.startLat,
+        segment.startLon,
+        cluster.center.startLat,
+        cluster.center.startLon
+      );
+
+      if (distance <= CLUSTER_RADIUS_FEET) {
+        cluster.members.push(segment);
+        foundCluster = true;
+        break;
+      }
+    }
+
+    if (!foundCluster) {
+      // Start a new cluster
+      clusters.push({ center: segment, members: [segment] });
+    }
+  }
+
+  // Find the largest cluster
+  const largestCluster = clusters.reduce((largest, current) =>
+    current.members.length > largest.members.length ? current : largest
+  );
+
+  // Calculate confidence based on consistency
+  const daysDetected = largestCluster.members.length;
+  const totalDaysAnalyzed = dailyFirstSegments.length;
+  const consistencyRatio = daysDetected / nonOfficeStarts.length;
+
+  let confidence: 'high' | 'medium' | 'low';
+  if (consistencyRatio >= 0.8 && daysDetected >= 10) {
+    confidence = 'high';
+  } else if (consistencyRatio >= 0.5 && daysDetected >= 5) {
+    confidence = 'medium';
+  } else if (daysDetected >= 3) {
+    confidence = 'low';
+  } else {
+    // Not enough consistent data
+    return null;
+  }
+
+  // Calculate average position of the cluster
+  const avgLat = largestCluster.members.reduce((sum, m) => sum + m.startLat, 0) / daysDetected;
+  const avgLon = largestCluster.members.reduce((sum, m) => sum + m.startLon, 0) / daysDetected;
+
+  // Use the most common address in the cluster (or the center's address)
+  const addressCounts: Record<string, number> = {};
+  for (const member of largestCluster.members) {
+    if (member.address) {
+      addressCounts[member.address] = (addressCounts[member.address] || 0) + 1;
+    }
+  }
+  const mostCommonAddress = Object.entries(addressCounts)
+    .sort((a, b) => b[1] - a[1])[0]?.[0] || largestCluster.center.address || 'Unknown Address';
+
+  return {
+    latitude: avgLat,
+    longitude: avgLon,
+    address: mostCommonAddress,
+    confidence,
+    daysDetected,
+    totalDaysAnalyzed,
+  };
 }

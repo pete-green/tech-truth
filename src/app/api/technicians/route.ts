@@ -52,13 +52,23 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// PATCH to update technician (e.g., link Verizon vehicle ID)
+// PATCH to update technician (e.g., link Verizon vehicle ID, configure office visit tracking)
 export async function PATCH(req: NextRequest) {
   const supabase = createServerClient();
 
   try {
     const body = await req.json();
-    const { id, verizon_vehicle_id, verizon_driver_id, active } = body;
+    const {
+      id,
+      verizon_vehicle_id,
+      verizon_driver_id,
+      active,
+      exclude_from_office_visits,
+      takes_truck_home,
+      home_latitude,
+      home_longitude,
+      home_address,
+    } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'ID is required' }, { status: 400 });
@@ -68,6 +78,11 @@ export async function PATCH(req: NextRequest) {
     if (verizon_vehicle_id !== undefined) updateData.verizon_vehicle_id = verizon_vehicle_id;
     if (verizon_driver_id !== undefined) updateData.verizon_driver_id = verizon_driver_id;
     if (active !== undefined) updateData.active = active;
+    if (exclude_from_office_visits !== undefined) updateData.exclude_from_office_visits = exclude_from_office_visits;
+    if (takes_truck_home !== undefined) updateData.takes_truck_home = takes_truck_home;
+    if (home_latitude !== undefined) updateData.home_latitude = home_latitude;
+    if (home_longitude !== undefined) updateData.home_longitude = home_longitude;
+    if (home_address !== undefined) updateData.home_address = home_address;
 
     const { data, error } = await supabase
       .from('technicians')

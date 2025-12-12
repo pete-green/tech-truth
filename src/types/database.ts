@@ -234,6 +234,7 @@ export type Database = {
           departure_time: string | null
           duration_minutes: number | null
           id: string
+          is_unnecessary: boolean | null
           technician_id: string | null
           visit_date: string
           visit_type: string
@@ -244,6 +245,7 @@ export type Database = {
           departure_time?: string | null
           duration_minutes?: number | null
           id?: string
+          is_unnecessary?: boolean | null
           technician_id?: string | null
           visit_date: string
           visit_type: string
@@ -254,6 +256,7 @@ export type Database = {
           departure_time?: string | null
           duration_minutes?: number | null
           id?: string
+          is_unnecessary?: boolean | null
           technician_id?: string | null
           visit_date?: string
           visit_type?: string
@@ -311,10 +314,14 @@ export type Database = {
           created_at: string | null
           email: string | null
           exclude_from_office_visits: boolean | null
+          home_address: string | null
+          home_latitude: number | null
+          home_longitude: number | null
           id: string
           name: string
           phone: string | null
           st_technician_id: number
+          takes_truck_home: boolean | null
           updated_at: string | null
           verizon_driver_id: string | null
           verizon_vehicle_id: string | null
@@ -324,10 +331,14 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           exclude_from_office_visits?: boolean | null
+          home_address?: string | null
+          home_latitude?: number | null
+          home_longitude?: number | null
           id?: string
           name: string
           phone?: string | null
           st_technician_id: number
+          takes_truck_home?: boolean | null
           updated_at?: string | null
           verizon_driver_id?: string | null
           verizon_vehicle_id?: string | null
@@ -337,10 +348,14 @@ export type Database = {
           created_at?: string | null
           email?: string | null
           exclude_from_office_visits?: boolean | null
+          home_address?: string | null
+          home_latitude?: number | null
+          home_longitude?: number | null
           id?: string
           name?: string
           phone?: string | null
           st_technician_id?: number
+          takes_truck_home?: boolean | null
           updated_at?: string | null
           verizon_driver_id?: string | null
           verizon_vehicle_id?: string | null

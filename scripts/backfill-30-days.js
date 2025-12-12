@@ -21,7 +21,13 @@ async function syncDate(dateStr) {
     const result = await response.json();
 
     if (result.success) {
-      const officeInfo = result.summary.midDayOfficeVisits > 0 ? `, ${result.summary.midDayOfficeVisits} office visits` : '';
+      let officeInfo = '';
+      if (result.summary.midDayOfficeVisits > 0) {
+        const unnecessaryInfo = result.summary.unnecessaryOfficeVisits > 0
+          ? ` (${result.summary.unnecessaryOfficeVisits} unnecessary)`
+          : '';
+        officeInfo = `, ${result.summary.midDayOfficeVisits} office visits${unnecessaryInfo}`;
+      }
       console.log(`  ✓ ${dateStr}: ${result.summary.firstJobsProcessed} jobs, ${result.summary.lateArrivals} late${officeInfo}`);
       return result;
     } else {
@@ -50,6 +56,7 @@ async function main() {
     totalJobs: 0,
     totalLate: 0,
     totalOfficeVisits: 0,
+    totalUnnecessaryVisits: 0,
   };
 
   // Go back 30 days
@@ -71,6 +78,7 @@ async function main() {
       results.totalJobs += result.summary.firstJobsProcessed || 0;
       results.totalLate += result.summary.lateArrivals || 0;
       results.totalOfficeVisits += result.summary.midDayOfficeVisits || 0;
+      results.totalUnnecessaryVisits += result.summary.unnecessaryOfficeVisits || 0;
     } else {
       results.failed++;
     }
@@ -87,6 +95,9 @@ async function main() {
   console.log(`Total jobs processed: ${results.totalJobs}`);
   console.log(`Total late arrivals: ${results.totalLate}`);
   console.log(`Total mid-day office visits: ${results.totalOfficeVisits}`);
+  if (results.totalUnnecessaryVisits > 0) {
+    console.log(`Total unnecessary visits: ${results.totalUnnecessaryVisits}`);
+  }
 }
 
 main().catch(console.error);
