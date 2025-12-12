@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { format, parseISO } from 'date-fns';
+import { parseISO, differenceInMinutes } from 'date-fns';
 import { DayDetail, JobDetail } from '@/types/reports';
 
 export async function GET(req: NextRequest) {
@@ -89,6 +89,18 @@ export async function GET(req: NextRequest) {
 
       const disc = discrepancyMap.get(job.id);
 
+      // Calculate variance from job times if not in discrepancy table
+      let varianceMinutes: number | null = disc?.varianceMinutes ?? null;
+      let isLate = disc?.isLate ?? false;
+
+      // If no discrepancy record but we have both times, calculate variance
+      if (varianceMinutes === null && job.scheduled_start && job.actual_arrival) {
+        const scheduled = parseISO(job.scheduled_start);
+        const actual = parseISO(job.actual_arrival);
+        varianceMinutes = differenceInMinutes(actual, scheduled);
+        isLate = varianceMinutes > 10; // Same threshold as sync-data
+      }
+
       const jobDetail: JobDetail = {
         id: job.id,
         jobNumber: job.job_number || '',
@@ -96,8 +108,8 @@ export async function GET(req: NextRequest) {
         jobAddress: job.job_address,
         scheduledStart: job.scheduled_start,
         actualArrival: job.actual_arrival,
-        varianceMinutes: disc?.varianceMinutes ?? null,
-        isLate: disc?.isLate ?? false,
+        varianceMinutes,
+        isLate,
         isFirstJob: job.is_first_job_of_day || false,
         jobLatitude: job.job_latitude,
         jobLongitude: job.job_longitude,
