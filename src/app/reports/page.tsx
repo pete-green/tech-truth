@@ -71,6 +71,7 @@ export default function ReportsPage() {
 
   // Technician filtering
   const [selectedTechnicianIds, setSelectedTechnicianIds] = useState<Set<string>>(new Set());
+  const [allTechnicians, setAllTechnicians] = useState<TechnicianFilterItem[]>([]); // Full list for filter panel
   const [initialLoad, setInitialLoad] = useState(true);
 
   // Expanded rows
@@ -122,8 +123,9 @@ export default function ReportsPage() {
 
       setReportData(data);
 
-      // On initial load, select all technicians
+      // On initial load (or date range change), save full technician list and select all
       if (initialLoad && data.availableTechnicians) {
+        setAllTechnicians(data.availableTechnicians);
         setSelectedTechnicianIds(new Set(data.availableTechnicians.map((t: TechnicianFilterItem) => t.id)));
         setInitialLoad(false);
       }
@@ -135,6 +137,12 @@ export default function ReportsPage() {
   }, [getDateRange, mounted, initialLoad]);
 
   useEffect(() => {
+    // Reset to initial state when date range changes
+    setInitialLoad(true);
+    setSelectedTechnicianIds(new Set());
+    setAllTechnicians([]);
+    setExpandedTechnicianIds(new Set());
+    setTechnicianDetails(new Map());
     fetchReport();
   }, [dateRange, customStartDate, customEndDate, mounted]);
 
@@ -367,7 +375,7 @@ export default function ReportsPage() {
             {/* Left Column - Technician Filter */}
             <div className="w-64 flex-shrink-0">
               <TechnicianFilter
-                technicians={reportData.availableTechnicians || []}
+                technicians={allTechnicians}
                 selectedIds={selectedTechnicianIds}
                 onSelectionChange={handleTechnicianSelectionChange}
                 loading={loading}
