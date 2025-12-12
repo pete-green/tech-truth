@@ -29,6 +29,32 @@ export default function GpsLocationModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [icons, setIcons] = useState<{ job: any; truck: any } | null>(null);
+
+  // Load Leaflet icons on client side only
+  useEffect(() => {
+    import('leaflet').then((L) => {
+      const JobIcon = new L.Icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41],
+      });
+
+      const TruckIcon = new L.Icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41],
+      });
+
+      setIcons({ job: JobIcon, truck: TruckIcon });
+    });
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -131,7 +157,7 @@ export default function GpsLocationModal({
           ) : data ? (
             <>
               {/* Map */}
-              {data.jobLocation && mapReady && (
+              {data.jobLocation && mapReady && icons && (
                 <div className="h-80 rounded-lg overflow-hidden border mb-4">
                   <MapContainer
                     bounds={getBounds() || undefined}
@@ -146,6 +172,7 @@ export default function GpsLocationModal({
                     {/* Job Location Marker (Blue) */}
                     <Marker
                       position={[data.jobLocation.latitude, data.jobLocation.longitude]}
+                      icon={icons.job}
                     >
                       <Popup>
                         <div className="text-sm">
@@ -164,6 +191,7 @@ export default function GpsLocationModal({
                     {data.truckLocation && (
                       <Marker
                         position={[data.truckLocation.latitude, data.truckLocation.longitude]}
+                        icon={icons.truck}
                       >
                         <Popup>
                           <div className="text-sm">
