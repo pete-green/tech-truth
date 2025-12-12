@@ -174,6 +174,39 @@ export async function getCustomer(customerId: number) {
   return stFetch(endpoint);
 }
 
+// Get job type details
+export async function getJobType(jobTypeId: number) {
+  const endpoint = `/jpm/v2/tenant/${ST_CONFIG.tenantId}/job-types/${jobTypeId}`;
+  return stFetch(endpoint);
+}
+
+// Cache for job types to avoid repeated API calls
+const jobTypeCache = new Map<number, { name: string; isFollowUp: boolean }>();
+
+// Get job type with caching and follow-up detection
+export async function getJobTypeWithCache(jobTypeId: number): Promise<{ name: string; isFollowUp: boolean }> {
+  if (jobTypeCache.has(jobTypeId)) {
+    return jobTypeCache.get(jobTypeId)!;
+  }
+
+  try {
+    const jobType = await getJobType(jobTypeId);
+    const name = jobType.name || '';
+    // Check if job type name indicates a follow-up (case insensitive)
+    const isFollowUp = name.toLowerCase().includes('follow up') ||
+                       name.toLowerCase().includes('follow-up') ||
+                       name.toLowerCase().includes('callback') ||
+                       name.toLowerCase().includes('call back');
+
+    const result = { name, isFollowUp };
+    jobTypeCache.set(jobTypeId, result);
+    return result;
+  } catch (error) {
+    // If we can't get job type, assume it's not a follow-up
+    return { name: 'Unknown', isFollowUp: false };
+  }
+}
+
 // TypeScript interfaces for API responses
 export interface ServiceTitanLocation {
   id: number;

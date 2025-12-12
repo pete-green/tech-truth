@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { getTechnicians, getAppointments, getAppointmentAssignmentsByJobId, getJob, getLocation } from '@/lib/service-titan';
+import { getTechnicians, getAppointments, getAppointmentAssignmentsByJobId, getJob, getLocation, getJobTypeWithCache } from '@/lib/service-titan';
 import { getVehicleGPSData, getVehicleSegments, GPSHistoryPoint, VehicleSegment } from '@/lib/verizon-connect';
 import { parseISO, differenceInMinutes, subMinutes, addHours, format } from 'date-fns';
 import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
@@ -155,13 +155,23 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Mark this tech's first job as being processed
-        processedTechFirstJob.add(stTechId);
-
         const scheduledTime = new Date(appointment.start);
 
-        // Step 3b: Get job details for location
+        // Step 3b: Get job details for location AND job type
         const jobDetails = await getJob(appointment.jobId);
+
+        // Check if this is a follow-up job type (not an actual on-site visit)
+        if (jobDetails.jobTypeId) {
+          const jobType = await getJobTypeWithCache(jobDetails.jobTypeId);
+          if (jobType.isFollowUp) {
+            console.log(`  Skipping follow-up job: ${techData.name} - Job ${appointment.jobId} (${jobType.name})`);
+            // Don't mark as processed - continue looking for first actual on-site job
+            continue;
+          }
+        }
+
+        // Mark this tech's first job as being processed (only for non-follow-up jobs)
+        processedTechFirstJob.add(stTechId);
 
         if (!jobDetails.locationId) {
           errors.push({
