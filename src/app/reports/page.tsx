@@ -8,13 +8,15 @@ import {
   Calendar,
   Users,
   Clock,
-  TrendingUp,
-  TrendingDown,
   AlertTriangle,
   CheckCircle,
   Download,
   RefreshCw,
 } from 'lucide-react';
+import TechnicianFilter from '@/components/TechnicianFilter';
+import ExpandableTechnicianRow from '@/components/ExpandableTechnicianRow';
+import GpsLocationModal from '@/components/GpsLocationModal';
+import { TechnicianFilterItem, TechnicianDayDetails, JobDetail, GpsModalState } from '@/types/reports';
 
 interface TechnicianStats {
   id: string;
@@ -55,6 +57,7 @@ interface ReportData {
   byTechnician: TechnicianStats[];
   byDayOfWeek: Record<string, DayOfWeekStats>;
   dailyTrend: DailyTrend[];
+  availableTechnicians: TechnicianFilterItem[];
 }
 
 export default function ReportsPage() {
@@ -66,43 +69,150 @@ export default function ReportsPage() {
   const [customEndDate, setCustomEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [mounted, setMounted] = useState(false);
 
+  // Technician filtering
+  const [selectedTechnicianIds, setSelectedTechnicianIds] = useState<Set<string>>(new Set());
+  const [initialLoad, setInitialLoad] = useState(true);
+
+  // Expanded rows
+  const [expandedTechnicianIds, setExpandedTechnicianIds] = useState<Set<string>>(new Set());
+  const [technicianDetails, setTechnicianDetails] = useState<Map<string, TechnicianDayDetails>>(new Map());
+  const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set());
+
+  // GPS Modal
+  const [gpsModal, setGpsModal] = useState<GpsModalState | null>(null);
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const fetchReport = useCallback(async () => {
+  const getDateRange = useCallback(() => {
+    let startDate: string;
+    let endDate = format(new Date(), 'yyyy-MM-dd');
+
+    if (dateRange === 'custom') {
+      startDate = customStartDate;
+      endDate = customEndDate;
+    } else {
+      startDate = format(subDays(new Date(), parseInt(dateRange)), 'yyyy-MM-dd');
+    }
+
+    return { startDate, endDate };
+  }, [dateRange, customStartDate, customEndDate]);
+
+  const fetchReport = useCallback(async (techIds?: Set<string>) => {
     if (!mounted) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      let startDate: string;
-      let endDate = format(new Date(), 'yyyy-MM-dd');
+      const { startDate, endDate } = getDateRange();
 
-      if (dateRange === 'custom') {
-        startDate = customStartDate;
-        endDate = customEndDate;
-      } else {
-        startDate = format(subDays(new Date(), parseInt(dateRange)), 'yyyy-MM-dd');
+      let url = `/api/reports?startDate=${startDate}&endDate=${endDate}`;
+
+      // Add technician filter if not initial load and we have selections
+      if (!initialLoad && techIds && techIds.size > 0) {
+        url += `&technicianIds=${Array.from(techIds).join(',')}`;
       }
 
-      const response = await fetch(`/api/reports?startDate=${startDate}&endDate=${endDate}`);
+      const response = await fetch(url);
       const data = await response.json();
 
       if (!response.ok) throw new Error(data.error);
 
       setReportData(data);
+
+      // On initial load, select all technicians
+      if (initialLoad && data.availableTechnicians) {
+        setSelectedTechnicianIds(new Set(data.availableTechnicians.map((t: TechnicianFilterItem) => t.id)));
+        setInitialLoad(false);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [dateRange, customStartDate, customEndDate, mounted]);
+  }, [getDateRange, mounted, initialLoad]);
 
   useEffect(() => {
     fetchReport();
-  }, [fetchReport]);
+  }, [dateRange, customStartDate, customEndDate, mounted]);
+
+  // Refetch when technician selection changes (after initial load)
+  const handleTechnicianSelectionChange = useCallback((newSelection: Set<string>) => {
+    setSelectedTechnicianIds(newSelection);
+
+    // Clear expanded rows and cached details when filter changes
+    setExpandedTechnicianIds(new Set());
+    setTechnicianDetails(new Map());
+
+    // Refetch with new selection
+    if (!initialLoad) {
+      fetchReport(newSelection);
+    }
+  }, [fetchReport, initialLoad]);
+
+  const fetchTechnicianDetails = async (technicianId: string) => {
+    const { startDate, endDate } = getDateRange();
+
+    setLoadingDetails((prev) => new Set(prev).add(technicianId));
+
+    try {
+      const response = await fetch(
+        `/api/reports/technician-details?technicianId=${technicianId}&startDate=${startDate}&endDate=${endDate}`
+      );
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error);
+
+      setTechnicianDetails((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(technicianId, data);
+        return newMap;
+      });
+    } catch (err: any) {
+      console.error('Error fetching technician details:', err);
+    } finally {
+      setLoadingDetails((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(technicianId);
+        return newSet;
+      });
+    }
+  };
+
+  const toggleExpanded = (technicianId: string) => {
+    setExpandedTechnicianIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(technicianId)) {
+        newSet.delete(technicianId);
+      } else {
+        newSet.add(technicianId);
+        // Fetch details if not already cached
+        if (!technicianDetails.has(technicianId)) {
+          fetchTechnicianDetails(technicianId);
+        }
+      }
+      return newSet;
+    });
+  };
+
+  const handleShowGpsLocation = (job: JobDetail, technicianName: string) => {
+    const tech = reportData?.byTechnician.find((t) => t.name === technicianName);
+    if (!tech) return;
+
+    setGpsModal({
+      isOpen: true,
+      technicianName,
+      jobDate: job.scheduledStart.split('T')[0],
+      scheduledTime: job.scheduledStart,
+      jobId: job.id,
+      technicianId: tech.id,
+      data: null,
+      loading: true,
+      error: null,
+    });
+  };
 
   const exportToCSV = () => {
     if (!reportData) return;
@@ -177,7 +287,7 @@ export default function ReportsPage() {
                 Export CSV
               </button>
               <button
-                onClick={fetchReport}
+                onClick={() => fetchReport(selectedTechnicianIds)}
                 disabled={loading}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
@@ -248,198 +358,197 @@ export default function ReportsPage() {
           </div>
         )}
 
-        {loading ? (
+        {loading && !reportData ? (
           <div className="flex items-center justify-center py-12">
             <RefreshCw className="w-8 h-8 text-gray-400 animate-spin" />
           </div>
         ) : reportData ? (
-          <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div className="bg-white rounded-lg shadow-sm p-4 border">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Users className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {reportData.summary.totalFirstJobs}
-                    </p>
-                    <p className="text-sm text-gray-500">Total First Jobs</p>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white rounded-lg shadow-sm p-4 border">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {reportData.summary.onTimePercentage}%
-                    </p>
-                    <p className="text-sm text-gray-500">On-Time Rate</p>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white rounded-lg shadow-sm p-4 border">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                    <AlertTriangle className="w-5 h-5 text-red-600" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {reportData.summary.lateFirstJobs}
-                    </p>
-                    <p className="text-sm text-gray-500">Late First Jobs</p>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white rounded-lg shadow-sm p-4 border">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                    <Clock className="w-5 h-5 text-yellow-600" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {reportData.summary.avgLateMinutes}m
-                    </p>
-                    <p className="text-sm text-gray-500">Avg Late Time</p>
-                  </div>
-                </div>
-              </div>
+          <div className="flex gap-6">
+            {/* Left Column - Technician Filter */}
+            <div className="w-64 flex-shrink-0">
+              <TechnicianFilter
+                technicians={reportData.availableTechnicians || []}
+                selectedIds={selectedTechnicianIds}
+                onSelectionChange={handleTechnicianSelectionChange}
+                loading={loading}
+              />
             </div>
 
-            {/* Day of Week Analysis */}
-            <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
-              <h2 className="font-semibold text-gray-900 mb-4">On-Time Rate by Day of Week</h2>
-              <div className="grid grid-cols-7 gap-2">
-                {dayNames.map((day) => {
-                  const stats = reportData.byDayOfWeek[day];
-                  const percentage = stats.percentage;
-                  const bgColor = percentage >= 90 ? 'bg-green-100' : percentage >= 75 ? 'bg-yellow-100' : 'bg-red-100';
-                  const textColor = percentage >= 90 ? 'text-green-700' : percentage >= 75 ? 'text-yellow-700' : 'text-red-700';
-
-                  return (
-                    <div key={day} className={`p-3 rounded-lg ${bgColor} text-center`}>
-                      <p className="text-xs font-medium text-gray-600">{dayLabels[day]}</p>
-                      <p className={`text-lg font-bold ${textColor}`}>{percentage}%</p>
-                      <p className="text-xs text-gray-500">{stats.total} jobs</p>
+            {/* Right Column - Reports Content */}
+            <div className="flex-1 min-w-0">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-white rounded-lg shadow-sm p-4 border">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Users className="w-5 h-5 text-blue-600" />
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Technician Performance Table */}
-            <div className="bg-white rounded-lg shadow-sm border overflow-hidden mb-6">
-              <div className="px-4 py-3 border-b bg-gray-50">
-                <h2 className="font-semibold text-gray-900">Technician Performance</h2>
-              </div>
-              {reportData.byTechnician.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">
-                  No data available for this period
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {reportData.summary.totalFirstJobs}
+                      </p>
+                      <p className="text-sm text-gray-500">Total First Jobs</p>
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                          Technician
-                        </th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                          First Jobs
-                        </th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                          Late
-                        </th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                          On-Time %
-                        </th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                          Avg Late
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {reportData.byTechnician.map((tech) => (
-                        <tr key={tech.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-gray-900">
-                            {tech.name}
-                          </td>
-                          <td className="px-4 py-3 text-center text-gray-900">
-                            {tech.totalFirstJobs}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span
-                              className={`inline-flex items-center px-2 py-1 rounded text-sm font-medium ${
-                                tech.lateFirstJobs === 0
-                                  ? 'bg-green-100 text-green-700'
-                                  : tech.lateFirstJobs <= 2
-                                  ? 'bg-yellow-100 text-yellow-700'
-                                  : 'bg-red-100 text-red-700'
-                              }`}
-                            >
-                              {tech.lateFirstJobs}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <div className="w-16 bg-gray-200 rounded-full h-2">
-                                <div
-                                  className={`h-2 rounded-full ${
-                                    tech.onTimePercentage >= 90
-                                      ? 'bg-green-500'
-                                      : tech.onTimePercentage >= 75
-                                      ? 'bg-yellow-500'
-                                      : 'bg-red-500'
-                                  }`}
-                                  style={{ width: `${tech.onTimePercentage}%` }}
-                                />
-                              </div>
-                              <span className="text-sm text-gray-900">{tech.onTimePercentage}%</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-center text-gray-900">
-                            {tech.avgLateMinutes > 0 ? `${tech.avgLateMinutes}m` : '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="bg-white rounded-lg shadow-sm p-4 border">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {reportData.summary.onTimePercentage}%
+                      </p>
+                      <p className="text-sm text-gray-500">On-Time Rate</p>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
+                <div className="bg-white rounded-lg shadow-sm p-4 border">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                      <AlertTriangle className="w-5 h-5 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {reportData.summary.lateFirstJobs}
+                      </p>
+                      <p className="text-sm text-gray-500">Late First Jobs</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg shadow-sm p-4 border">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                      <Clock className="w-5 h-5 text-yellow-600" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {reportData.summary.avgLateMinutes}m
+                      </p>
+                      <p className="text-sm text-gray-500">Avg Late Time</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-            {/* Daily Trend */}
-            {reportData.dailyTrend.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border p-4">
-                <h2 className="font-semibold text-gray-900 mb-4">Daily Late Arrivals</h2>
-                <div className="h-32 flex items-end gap-1">
-                  {reportData.dailyTrend.map((day, index) => {
-                    const maxLate = Math.max(...reportData.dailyTrend.map(d => d.totalLate));
-                    const height = maxLate > 0 ? (day.totalLate / maxLate) * 100 : 0;
+              {/* Day of Week Analysis */}
+              <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
+                <h2 className="font-semibold text-gray-900 mb-4">On-Time Rate by Day of Week</h2>
+                <div className="grid grid-cols-7 gap-2">
+                  {dayNames.map((day) => {
+                    const stats = reportData.byDayOfWeek[day];
+                    const percentage = stats.percentage;
+                    const bgColor = percentage >= 90 ? 'bg-green-100' : percentage >= 75 ? 'bg-yellow-100' : 'bg-red-100';
+                    const textColor = percentage >= 90 ? 'text-green-700' : percentage >= 75 ? 'text-yellow-700' : 'text-red-700';
 
                     return (
-                      <div
-                        key={day.date}
-                        className="flex-1 bg-red-400 rounded-t hover:bg-red-500 transition-colors"
-                        style={{ height: `${Math.max(height, 5)}%` }}
-                        title={`${format(parseISO(day.date), 'MMM d')}: ${day.totalLate} late (avg ${day.avgVariance}m)`}
-                      />
+                      <div key={day} className={`p-3 rounded-lg ${bgColor} text-center`}>
+                        <p className="text-xs font-medium text-gray-600">{dayLabels[day]}</p>
+                        <p className={`text-lg font-bold ${textColor}`}>{percentage}%</p>
+                        <p className="text-xs text-gray-500">{stats.total} jobs</p>
+                      </div>
                     );
                   })}
                 </div>
-                <div className="flex justify-between text-xs text-gray-500 mt-2">
-                  <span>{reportData.period.start}</span>
-                  <span>{reportData.period.end}</span>
-                </div>
               </div>
-            )}
-          </>
+
+              {/* Technician Performance Table */}
+              <div className="bg-white rounded-lg shadow-sm border overflow-hidden mb-6">
+                <div className="px-4 py-3 border-b bg-gray-50">
+                  <h2 className="font-semibold text-gray-900">
+                    Technician Performance
+                    <span className="text-sm font-normal text-gray-500 ml-2">
+                      (click to expand day-by-day details)
+                    </span>
+                  </h2>
+                </div>
+                {reportData.byTechnician.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    No data available for this period
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            Technician
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                            First Jobs
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                            Late
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                            On-Time %
+                          </th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                            Avg Late
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {reportData.byTechnician.map((tech) => (
+                          <ExpandableTechnicianRow
+                            key={tech.id}
+                            technician={tech}
+                            expanded={expandedTechnicianIds.has(tech.id)}
+                            onToggle={() => toggleExpanded(tech.id)}
+                            dayDetails={technicianDetails.get(tech.id) || null}
+                            loading={loadingDetails.has(tech.id)}
+                            onShowGpsLocation={handleShowGpsLocation}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Daily Trend */}
+              {reportData.dailyTrend.length > 0 && (
+                <div className="bg-white rounded-lg shadow-sm border p-4">
+                  <h2 className="font-semibold text-gray-900 mb-4">Daily Late Arrivals</h2>
+                  <div className="h-32 flex items-end gap-1">
+                    {reportData.dailyTrend.map((day) => {
+                      const maxLate = Math.max(...reportData.dailyTrend.map(d => d.totalLate));
+                      const height = maxLate > 0 ? (day.totalLate / maxLate) * 100 : 0;
+
+                      return (
+                        <div
+                          key={day.date}
+                          className="flex-1 bg-red-400 rounded-t hover:bg-red-500 transition-colors"
+                          style={{ height: `${Math.max(height, 5)}%` }}
+                          title={`${format(parseISO(day.date), 'MMM d')}: ${day.totalLate} late (avg ${day.avgVariance}m)`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-500 mt-2">
+                    <span>{reportData.period.start}</span>
+                    <span>{reportData.period.end}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         ) : null}
       </main>
+
+      {/* GPS Location Modal */}
+      {gpsModal && (
+        <GpsLocationModal
+          isOpen={gpsModal.isOpen}
+          onClose={() => setGpsModal(null)}
+          technicianName={gpsModal.technicianName}
+          jobDate={gpsModal.jobDate}
+          scheduledTime={gpsModal.scheduledTime}
+          technicianId={gpsModal.technicianId}
+          jobId={gpsModal.jobId}
+        />
+      )}
     </div>
   );
 }

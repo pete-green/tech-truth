@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   const endDateStr = searchParams.get('endDate') || format(new Date(), 'yyyy-MM-dd');
   const startDateStr = searchParams.get('startDate') || format(subDays(parseISO(endDateStr), 30), 'yyyy-MM-dd');
   const technicianId = searchParams.get('technicianId');
+  const technicianIds = searchParams.get('technicianIds'); // comma-separated list
 
   try {
     // Build the base query for discrepancies
@@ -44,6 +45,11 @@ export async function GET(req: NextRequest) {
 
     if (technicianId) {
       discrepancyQuery = discrepancyQuery.eq('technician_id', technicianId);
+    } else if (technicianIds) {
+      const ids = technicianIds.split(',').filter(id => id.trim());
+      if (ids.length > 0) {
+        discrepancyQuery = discrepancyQuery.in('technician_id', ids);
+      }
     }
 
     const { data: discrepancies, error: discError } = await discrepancyQuery
@@ -61,6 +67,11 @@ export async function GET(req: NextRequest) {
 
     if (technicianId) {
       jobsQuery = jobsQuery.eq('technician_id', technicianId);
+    } else if (technicianIds) {
+      const ids = technicianIds.split(',').filter(id => id.trim());
+      if (ids.length > 0) {
+        jobsQuery = jobsQuery.in('technician_id', ids);
+      }
     }
 
     const { data: allFirstJobs, error: jobsError } = await jobsQuery;
@@ -204,6 +215,14 @@ export async function GET(req: NextRequest) {
       .filter(t => t.totalFirstJobs > 0)
       .sort((a, b) => b.lateFirstJobs - a.lateFirstJobs);
 
+    // Build available technicians list (only those with jobs in this period)
+    const availableTechnicians = byTechnicianArray.map(t => ({
+      id: t.id,
+      name: t.name,
+      totalFirstJobs: t.totalFirstJobs,
+      lateFirstJobs: t.lateFirstJobs,
+    }));
+
     return NextResponse.json({
       success: true,
       period: {
@@ -225,6 +244,7 @@ export async function GET(req: NextRequest) {
       byDayOfWeek,
       dailyTrend,
       recentDiscrepancies: discrepancies?.slice(0, 20) || [],
+      availableTechnicians,
     });
   } catch (error: any) {
     console.error('Error generating report:', error);
