@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { format, parseISO, subDays, startOfDay, endOfDay } from 'date-fns';
+import { format, parseISO, subDays, startOfDay, endOfDay, differenceInMinutes } from 'date-fns';
 
 export async function GET(req: NextRequest) {
   const supabase = createServerClient();
@@ -58,9 +58,10 @@ export async function GET(req: NextRequest) {
     if (discError) throw discError;
 
     // Get all jobs in the date range to calculate on-time percentage
+    // Include scheduled_start to calculate variance directly
     let jobsQuery = supabase
       .from('jobs')
-      .select('id, technician_id, job_date, is_first_job_of_day, actual_arrival')
+      .select('id, technician_id, job_date, is_first_job_of_day, actual_arrival, scheduled_start')
       .gte('job_date', startDateStr)
       .lte('job_date', endDateStr)
       .eq('is_first_job_of_day', true);
@@ -84,19 +85,45 @@ export async function GET(req: NextRequest) {
       .eq('active', true)
       .not('verizon_vehicle_id', 'is', null);
 
-    // Calculate summary metrics
-    const lateDiscrepancies = discrepancies?.filter(d => d.is_late) || [];
+    // Calculate late status directly from jobs (not just discrepancies)
+    // This ensures consistency between summary and details
+    const LATE_THRESHOLD_MINUTES = 10;
+
+    // Calculate variance for each job that has actual arrival data
+    const jobsWithVariance = (allFirstJobs || []).map(job => {
+      let varianceMinutes: number | null = null;
+      let isLate = false;
+
+      if (job.scheduled_start && job.actual_arrival) {
+        const scheduled = parseISO(job.scheduled_start);
+        const actual = parseISO(job.actual_arrival);
+        varianceMinutes = differenceInMinutes(actual, scheduled);
+        isLate = varianceMinutes > LATE_THRESHOLD_MINUTES;
+      }
+
+      return { ...job, varianceMinutes, isLate };
+    });
+
+    // Jobs with GPS-verified arrival that were late
+    const lateJobs = jobsWithVariance.filter(j => j.isLate);
+
+    // Calculate summary metrics from actual job data
     const totalFirstJobs = allFirstJobs?.length || 0;
-    const lateFirstJobs = lateDiscrepancies.length;
+    const lateFirstJobs = lateJobs.length;
     const onTimeFirstJobs = totalFirstJobs - lateFirstJobs;
     const onTimePercentage = totalFirstJobs > 0 ? Math.round((onTimeFirstJobs / totalFirstJobs) * 100) : 100;
 
-    const avgLateMinutes = lateDiscrepancies.length > 0
-      ? Math.round(lateDiscrepancies.reduce((sum, d) => sum + (d.variance_minutes || 0), 0) / lateDiscrepancies.length)
+    // Calculate late minutes from actual job variance
+    const lateMinutesArray = lateJobs
+      .filter(j => j.varianceMinutes !== null)
+      .map(j => j.varianceMinutes as number);
+
+    const avgLateMinutes = lateMinutesArray.length > 0
+      ? Math.round(lateMinutesArray.reduce((sum, m) => sum + m, 0) / lateMinutesArray.length)
       : 0;
 
-    const maxLateMinutes = lateDiscrepancies.length > 0
-      ? Math.max(...lateDiscrepancies.map(d => d.variance_minutes || 0))
+    const maxLateMinutes = lateMinutesArray.length > 0
+      ? Math.max(...lateMinutesArray)
       : 0;
 
     // Calculate by technician
@@ -123,22 +150,19 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    // Count first jobs per technician
-    for (const job of allFirstJobs || []) {
+    // Count first jobs and late arrivals per technician using actual job data
+    const techLateMinutes: Record<string, number[]> = {};
+    for (const job of jobsWithVariance) {
       if (job.technician_id && byTechnician[job.technician_id]) {
         byTechnician[job.technician_id].totalFirstJobs++;
-      }
-    }
 
-    // Count late arrivals per technician
-    const techLateMinutes: Record<string, number[]> = {};
-    for (const disc of lateDiscrepancies) {
-      if (disc.technician_id && byTechnician[disc.technician_id]) {
-        byTechnician[disc.technician_id].lateFirstJobs++;
-        if (!techLateMinutes[disc.technician_id]) {
-          techLateMinutes[disc.technician_id] = [];
+        if (job.isLate && job.varianceMinutes !== null) {
+          byTechnician[job.technician_id].lateFirstJobs++;
+          if (!techLateMinutes[job.technician_id]) {
+            techLateMinutes[job.technician_id] = [];
+          }
+          techLateMinutes[job.technician_id].push(job.varianceMinutes);
         }
-        techLateMinutes[disc.technician_id].push(disc.variance_minutes || 0);
       }
     }
 
@@ -153,10 +177,9 @@ export async function GET(req: NextRequest) {
           techLateMinutes[techId].reduce((sum, m) => sum + m, 0) / techLateMinutes[techId].length
         );
       }
-      // TODO: Calculate trend based on comparing first half vs second half of period
     }
 
-    // Calculate by day of week
+    // Calculate by day of week using actual job data
     const byDayOfWeek: Record<string, { total: number; late: number; percentage: number }> = {
       sunday: { total: 0, late: 0, percentage: 100 },
       monday: { total: 0, late: 0, percentage: 100 },
@@ -169,14 +192,12 @@ export async function GET(req: NextRequest) {
 
     const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-    for (const job of allFirstJobs || []) {
+    for (const job of jobsWithVariance) {
       const dayOfWeek = new Date(job.job_date).getDay();
       byDayOfWeek[dayNames[dayOfWeek]].total++;
-    }
-
-    for (const disc of lateDiscrepancies) {
-      const dayOfWeek = new Date(disc.job_date).getDay();
-      byDayOfWeek[dayNames[dayOfWeek]].late++;
+      if (job.isLate) {
+        byDayOfWeek[dayNames[dayOfWeek]].late++;
+      }
     }
 
     for (const day of dayNames) {
@@ -187,16 +208,18 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Calculate daily trend
+    // Calculate daily trend using actual job data
     const dailyTrend: { date: string; totalLate: number; avgVariance: number }[] = [];
     const dailyStats: Record<string, { late: number; totalVariance: number }> = {};
 
-    for (const disc of lateDiscrepancies) {
-      if (!dailyStats[disc.job_date]) {
-        dailyStats[disc.job_date] = { late: 0, totalVariance: 0 };
+    for (const job of jobsWithVariance) {
+      if (job.isLate && job.varianceMinutes !== null) {
+        if (!dailyStats[job.job_date]) {
+          dailyStats[job.job_date] = { late: 0, totalVariance: 0 };
+        }
+        dailyStats[job.job_date].late++;
+        dailyStats[job.job_date].totalVariance += job.varianceMinutes;
       }
-      dailyStats[disc.job_date].late++;
-      dailyStats[disc.job_date].totalVariance += disc.variance_minutes || 0;
     }
 
     const sortedDates = Object.keys(dailyStats).sort();
