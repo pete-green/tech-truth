@@ -4,7 +4,7 @@ import { getTechnicians, getAppointments, getAppointmentAssignmentsByJobId, getJ
 import { getVehicleGPSData, getVehicleSegments, GPSHistoryPoint, VehicleSegment } from '@/lib/verizon-connect';
 import { parseISO, differenceInMinutes, subMinutes, addHours, format } from 'date-fns';
 import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
-import { findArrivalTime, findArrivalFromSegments, ARRIVAL_RADIUS_FEET } from '@/lib/geo-utils';
+import { findArrivalTime, findArrivalFromSegments, ARRIVAL_RADIUS_FEET, detectOfficeVisits } from '@/lib/geo-utils';
 
 export const maxDuration = 60; // Vercel/Netlify function timeout (up to 60s on pro)
 
@@ -389,6 +389,71 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Step 4: Detect office visits for all technicians with trucks
+    console.log('\nStep 4: Detecting office visits...');
+    let officeVisitsDetected = 0;
+    let midDayVisitsFound = 0;
+
+    for (const tech of techsWithTrucks || []) {
+      // Skip if no vehicle ID (shouldn't happen due to query filter, but TypeScript needs this)
+      if (!tech.verizon_vehicle_id) continue;
+
+      try {
+        // Get today's segments for this technician's vehicle
+        const segmentsData = await getVehicleSegments(
+          tech.verizon_vehicle_id,
+          fromZonedTime(`${dateStr}T00:00:00`, EST_TIMEZONE).toISOString()
+        );
+        const segments = segmentsData.Segments || [];
+
+        if (segments.length === 0) {
+          continue;
+        }
+
+        // Detect office visits from segments
+        const officeVisits = detectOfficeVisits(segments);
+
+        if (officeVisits.length === 0) {
+          continue;
+        }
+
+        // Store each office visit
+        for (const visit of officeVisits) {
+          // Use arrival time for mid_day and end_of_day, departure for morning_departure
+          const visitKey = visit.arrivalTime || visit.departureTime;
+
+          const { error: visitError } = await supabase
+            .from('office_visits')
+            .upsert({
+              technician_id: tech.id,
+              visit_date: dateStr,
+              arrival_time: visit.arrivalTime?.toISOString() || null,
+              departure_time: visit.departureTime?.toISOString() || null,
+              duration_minutes: visit.durationMinutes,
+              visit_type: visit.visitType,
+            }, {
+              onConflict: 'technician_id,visit_date,arrival_time',
+            });
+
+          if (!visitError) {
+            officeVisitsDetected++;
+            if (visit.visitType === 'mid_day_visit') {
+              midDayVisitsFound++;
+              console.log(`  ${tech.name}: Mid-day visit - ${visit.durationMinutes || '?'} min`);
+            }
+          }
+        }
+      } catch (visitError: any) {
+        errors.push({
+          type: 'office_visit_detection',
+          techName: tech.name,
+          error: visitError.message,
+        });
+      }
+    }
+
+    console.log(`Office visits detected: ${officeVisitsDetected} total, ${midDayVisitsFound} mid-day`);
+
     // Update sync log
     if (syncLog) {
       await supabase
@@ -402,7 +467,7 @@ export async function POST(req: NextRequest) {
         .eq('id', syncLog.id);
     }
 
-    console.log(`\nSync complete: ${jobsProcessed} jobs processed, ${discrepanciesFound} late arrivals detected, ${errors.length} errors`);
+    console.log(`\nSync complete: ${jobsProcessed} jobs processed, ${discrepanciesFound} late arrivals detected, ${midDayVisitsFound} mid-day office visits, ${errors.length} errors`);
 
     return NextResponse.json({
       success: true,
@@ -413,6 +478,8 @@ export async function POST(req: NextRequest) {
         firstJobsProcessed: jobsProcessed,
         lateArrivals: discrepanciesFound,
         onTimeArrivals: jobsProcessed - discrepanciesFound,
+        officeVisitsDetected,
+        midDayOfficeVisits: midDayVisitsFound,
         errors: errors.length,
       },
       results,

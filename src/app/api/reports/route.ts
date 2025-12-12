@@ -273,6 +273,78 @@ export async function GET(req: NextRequest) {
       hasInaccurateData: t.hasInaccurateData,
     }));
 
+    // Query office visits for the date range
+    let officeVisitsQuery = supabase
+      .from('office_visits')
+      .select(`
+        id,
+        technician_id,
+        visit_date,
+        arrival_time,
+        departure_time,
+        duration_minutes,
+        visit_type,
+        technicians (
+          id,
+          name
+        )
+      `)
+      .gte('visit_date', startDateStr)
+      .lte('visit_date', endDateStr)
+      .eq('visit_type', 'mid_day_visit');
+
+    if (technicianId) {
+      officeVisitsQuery = officeVisitsQuery.eq('technician_id', technicianId);
+    } else if (technicianIds) {
+      const ids = technicianIds.split(',').filter(id => id.trim());
+      if (ids.length > 0) {
+        officeVisitsQuery = officeVisitsQuery.in('technician_id', ids);
+      }
+    }
+
+    const { data: officeVisits, error: officeVisitsError } = await officeVisitsQuery
+      .order('visit_date', { ascending: false });
+
+    if (officeVisitsError) {
+      console.error('Error fetching office visits:', officeVisitsError);
+    }
+
+    // Calculate office visit summary
+    const totalMidDayVisits = officeVisits?.length || 0;
+    const totalMinutesAtOffice = (officeVisits || [])
+      .filter(v => v.duration_minutes !== null)
+      .reduce((sum, v) => sum + (v.duration_minutes || 0), 0);
+
+    // Calculate visits per technician
+    const visitsByTech: Record<string, { technicianId: string; technicianName: string; visitCount: number; totalMinutes: number }> = {};
+    for (const visit of officeVisits || []) {
+      const techId = visit.technician_id;
+      if (!techId) continue; // Skip if no technician_id
+
+      const techName = (visit.technicians as any)?.name || 'Unknown';
+      if (!visitsByTech[techId]) {
+        visitsByTech[techId] = {
+          technicianId: techId,
+          technicianName: techName,
+          visitCount: 0,
+          totalMinutes: 0,
+        };
+      }
+      visitsByTech[techId].visitCount++;
+      visitsByTech[techId].totalMinutes += visit.duration_minutes || 0;
+    }
+
+    // Sort by visit count descending
+    const techsWithMostVisits = Object.values(visitsByTech)
+      .sort((a, b) => b.visitCount - a.visitCount)
+      .slice(0, 10); // Top 10
+
+    const officeVisitSummary = {
+      totalMidDayVisits,
+      totalMinutesAtOffice,
+      techsWithMostVisits,
+    };
+
     return NextResponse.json({
       success: true,
       period: {
@@ -297,6 +369,7 @@ export async function GET(req: NextRequest) {
       dailyTrend,
       recentDiscrepancies: discrepancies?.slice(0, 20) || [],
       availableTechnicians,
+      officeVisitSummary,
     });
   } catch (error: any) {
     console.error('Error generating report:', error);

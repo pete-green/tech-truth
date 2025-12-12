@@ -227,6 +227,54 @@ export type Database = {
           },
         ]
       }
+      office_visits: {
+        Row: {
+          arrival_time: string | null
+          created_at: string | null
+          departure_time: string | null
+          duration_minutes: number | null
+          id: string
+          technician_id: string | null
+          visit_date: string
+          visit_type: string
+        }
+        Insert: {
+          arrival_time?: string | null
+          created_at?: string | null
+          departure_time?: string | null
+          duration_minutes?: number | null
+          id?: string
+          technician_id?: string | null
+          visit_date: string
+          visit_type: string
+        }
+        Update: {
+          arrival_time?: string | null
+          created_at?: string | null
+          departure_time?: string | null
+          duration_minutes?: number | null
+          id?: string
+          technician_id?: string | null
+          visit_date?: string
+          visit_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "office_visits_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technician_performance"
+            referencedColumns: ["technician_id"]
+          },
+          {
+            foreignKeyName: "office_visits_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_logs: {
         Row: {
           completed_at: string | null
@@ -497,3 +545,4 @@ export type GpsEvent = Database['public']['Tables']['gps_events']['Row'];
 export type ArrivalDiscrepancy = Database['public']['Tables']['arrival_discrepancies']['Row'];
 export type SyncLog = Database['public']['Tables']['sync_logs']['Row'];
 export type Truck = Database['public']['Tables']['trucks']['Row'];
+export type OfficeVisit = Database['public']['Tables']['office_visits']['Row'];

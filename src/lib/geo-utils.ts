@@ -192,3 +192,128 @@ export function findArrivalFromSegments(
 
   return null;
 }
+
+/**
+ * Office location configuration
+ * Used to detect when technicians visit the office/shop
+ */
+export const OFFICE_LOCATION = {
+  latitude: 36.06693377330104,
+  longitude: -79.86402542389432,
+  radiusFeet: 500, // Account for parking lot, GPS drift
+};
+
+/**
+ * Office visit types
+ */
+export type OfficeVisitType = 'morning_departure' | 'mid_day_visit' | 'end_of_day';
+
+/**
+ * Detected office visit
+ */
+export interface OfficeVisit {
+  arrivalTime: Date | null;    // null for morning_departure
+  departureTime: Date | null;  // null for end_of_day
+  durationMinutes: number | null;
+  visitType: OfficeVisitType;
+}
+
+/**
+ * Check if a location is near the office
+ */
+export function isNearOffice(lat: number, lon: number): boolean {
+  return isWithinRadius(
+    lat,
+    lon,
+    OFFICE_LOCATION.latitude,
+    OFFICE_LOCATION.longitude,
+    OFFICE_LOCATION.radiusFeet
+  );
+}
+
+/**
+ * Detect office visits from vehicle segments
+ *
+ * Logic:
+ * - If first segment STARTS at office -> morning_departure (truck parked overnight)
+ * - If segment ENDS at office -> potential visit
+ *   - If it's the last segment of the day -> end_of_day
+ *   - Otherwise -> mid_day_visit (track arrival, find next segment for departure)
+ *
+ * @param segments - Vehicle segments from Verizon API (should be for a single day)
+ * @returns Array of detected office visits
+ */
+export function detectOfficeVisits(segments: VehicleSegment[]): OfficeVisit[] {
+  if (!segments || segments.length === 0) {
+    return [];
+  }
+
+  const visits: OfficeVisit[] = [];
+
+  // Sort segments by start time
+  const sortedSegments = [...segments]
+    .filter(seg => seg.StartDateUtc && seg.StartLocation)
+    .sort((a, b) =>
+      parseVerizonUtcTimestamp(a.StartDateUtc!).getTime() - parseVerizonUtcTimestamp(b.StartDateUtc!).getTime()
+    );
+
+  if (sortedSegments.length === 0) {
+    return [];
+  }
+
+  // Check first segment - does it START at office? (truck parked overnight)
+  const firstSegment = sortedSegments[0];
+  if (firstSegment.StartLocation && isNearOffice(firstSegment.StartLocation.Latitude, firstSegment.StartLocation.Longitude)) {
+    const departureTime = parseVerizonUtcTimestamp(firstSegment.StartDateUtc!);
+    visits.push({
+      arrivalTime: null, // We don't know when they arrived (previous day)
+      departureTime,
+      durationMinutes: null, // Can't calculate without arrival
+      visitType: 'morning_departure',
+    });
+  }
+
+  // Check each segment's end location for arrivals at office
+  for (let i = 0; i < sortedSegments.length; i++) {
+    const segment = sortedSegments[i];
+
+    // Skip if no end location
+    if (!segment.EndLocation || !segment.EndDateUtc) {
+      continue;
+    }
+
+    // Check if segment ends at office
+    if (isNearOffice(segment.EndLocation.Latitude, segment.EndLocation.Longitude)) {
+      const arrivalTime = parseVerizonUtcTimestamp(segment.EndDateUtc);
+
+      // Is this the last segment? -> end_of_day
+      if (i === sortedSegments.length - 1) {
+        visits.push({
+          arrivalTime,
+          departureTime: null, // Still there at end of data
+          durationMinutes: null,
+          visitType: 'end_of_day',
+        });
+      } else {
+        // Mid-day visit - find departure time from next segment's start
+        const nextSegment = sortedSegments[i + 1];
+        let departureTime: Date | null = null;
+        let durationMinutes: number | null = null;
+
+        if (nextSegment.StartDateUtc) {
+          departureTime = parseVerizonUtcTimestamp(nextSegment.StartDateUtc);
+          durationMinutes = Math.round((departureTime.getTime() - arrivalTime.getTime()) / 60000);
+        }
+
+        visits.push({
+          arrivalTime,
+          departureTime,
+          durationMinutes,
+          visitType: 'mid_day_visit',
+        });
+      }
+    }
+  }
+
+  return visits;
+}

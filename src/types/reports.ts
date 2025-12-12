@@ -23,14 +23,36 @@ export interface JobDetail {
   status: string | null;
 }
 
+export type OfficeVisitType = 'morning_departure' | 'mid_day_visit' | 'end_of_day';
+
+export interface OfficeVisitDetail {
+  arrivalTime: string | null;
+  departureTime: string | null;
+  durationMinutes: number | null;
+  visitType: OfficeVisitType;
+}
+
+export interface OfficeVisitSummary {
+  totalMidDayVisits: number;
+  totalMinutesAtOffice: number;
+  techsWithMostVisits: {
+    technicianId: string;
+    technicianName: string;
+    visitCount: number;
+    totalMinutes: number;
+  }[];
+}
+
 export interface DayDetail {
   date: string;
   dayOfWeek: string;
   jobs: JobDetail[];
+  officeVisits?: OfficeVisitDetail[];
   summary: {
     totalJobs: number;
     firstJobLate: boolean;
     firstJobVariance: number | null;
+    midDayOfficeMinutes?: number;
   };
 }
 

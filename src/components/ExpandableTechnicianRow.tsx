@@ -125,6 +125,7 @@ export default function ExpandableTechnicianRow({
                     date={day.date}
                     dayOfWeek={day.dayOfWeek}
                     jobs={day.jobs}
+                    officeVisits={day.officeVisits}
                     onShowGpsLocation={(job) => onShowGpsLocation(job, technician.name)}
                   />
                 ))}

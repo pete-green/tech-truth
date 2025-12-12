@@ -67,6 +67,39 @@ export async function GET(req: NextRequest) {
 
     if (discError) throw discError;
 
+    // Get office visits for this technician
+    const { data: officeVisits, error: officeVisitsError } = await supabase
+      .from('office_visits')
+      .select('*')
+      .eq('technician_id', technicianId)
+      .gte('visit_date', startDate)
+      .lte('visit_date', endDate)
+      .order('visit_date', { ascending: true })
+      .order('arrival_time', { ascending: true });
+
+    if (officeVisitsError) throw officeVisitsError;
+
+    // Group office visits by date
+    const officeVisitsByDate = new Map<string, Array<{
+      arrivalTime: string | null;
+      departureTime: string | null;
+      durationMinutes: number | null;
+      visitType: 'morning_departure' | 'mid_day_visit' | 'end_of_day';
+    }>>();
+
+    for (const visit of officeVisits || []) {
+      const date = visit.visit_date;
+      if (!officeVisitsByDate.has(date)) {
+        officeVisitsByDate.set(date, []);
+      }
+      officeVisitsByDate.get(date)!.push({
+        arrivalTime: visit.arrival_time,
+        departureTime: visit.departure_time,
+        durationMinutes: visit.duration_minutes,
+        visitType: visit.visit_type as 'morning_departure' | 'mid_day_visit' | 'end_of_day',
+      });
+    }
+
     // Create a map of job_id to discrepancy info
     const discrepancyMap = new Map<string, { varianceMinutes: number; isLate: boolean }>();
     for (const disc of discrepancies || []) {
@@ -126,15 +159,23 @@ export async function GET(req: NextRequest) {
     for (const [date, dayJobs] of dayMap.entries()) {
       const dateObj = parseISO(date);
       const firstJob = dayJobs.find(j => j.isFirstJob);
+      const dayOfficeVisits = officeVisitsByDate.get(date) || [];
+
+      // Calculate total time at office for mid-day visits
+      const midDayVisitMinutes = dayOfficeVisits
+        .filter(v => v.visitType === 'mid_day_visit' && v.durationMinutes !== null)
+        .reduce((sum, v) => sum + (v.durationMinutes || 0), 0);
 
       days.push({
         date,
         dayOfWeek: dayNames[dateObj.getDay()],
         jobs: dayJobs,
+        officeVisits: dayOfficeVisits,
         summary: {
           totalJobs: dayJobs.length,
           firstJobLate: firstJob?.isLate ?? false,
           firstJobVariance: firstJob?.varianceMinutes ?? null,
+          midDayOfficeMinutes: midDayVisitMinutes,
         },
       });
     }

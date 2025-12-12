@@ -12,6 +12,7 @@ import {
   CheckCircle,
   Download,
   RefreshCw,
+  Building,
 } from 'lucide-react';
 import TechnicianFilter from '@/components/TechnicianFilter';
 import ExpandableTechnicianRow from '@/components/ExpandableTechnicianRow';
@@ -43,6 +44,19 @@ interface DailyTrend {
   avgVariance: number;
 }
 
+interface OfficeVisitTechSummary {
+  technicianId: string;
+  technicianName: string;
+  visitCount: number;
+  totalMinutes: number;
+}
+
+interface OfficeVisitSummary {
+  totalMidDayVisits: number;
+  totalMinutesAtOffice: number;
+  techsWithMostVisits: OfficeVisitTechSummary[];
+}
+
 interface ReportData {
   period: {
     start: string;
@@ -63,6 +77,7 @@ interface ReportData {
   byDayOfWeek: Record<string, DayOfWeekStats>;
   dailyTrend: DailyTrend[];
   availableTechnicians: TechnicianFilterItem[];
+  officeVisitSummary?: OfficeVisitSummary;
 }
 
 export default function ReportsPage() {
@@ -462,6 +477,65 @@ export default function ReportsPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Office Visit Summary Card */}
+              {reportData.officeVisitSummary && reportData.officeVisitSummary.totalMidDayVisits > 0 && (
+                <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <Building className="w-5 h-5 text-purple-600" />
+                      </div>
+                      <div>
+                        <h2 className="font-semibold text-gray-900">Office Visits During Work Hours</h2>
+                        <p className="text-sm text-gray-500">
+                          {reportData.officeVisitSummary.totalMidDayVisits} mid-day visits
+                          {reportData.officeVisitSummary.totalMinutesAtOffice > 0 && (
+                            <span className="text-purple-600 ml-1">
+                              ({Math.round(reportData.officeVisitSummary.totalMinutesAtOffice / 60)}h {reportData.officeVisitSummary.totalMinutesAtOffice % 60}m total)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {reportData.officeVisitSummary.techsWithMostVisits.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Technician</th>
+                            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Visits</th>
+                            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total Time</th>
+                            <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Avg/Visit</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {reportData.officeVisitSummary.techsWithMostVisits.slice(0, 5).map((tech) => (
+                            <tr key={tech.technicianId} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 font-medium text-gray-900">{tech.technicianName}</td>
+                              <td className="px-3 py-2 text-center">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                  {tech.visitCount}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-center text-gray-600">
+                                {tech.totalMinutes >= 60
+                                  ? `${Math.floor(tech.totalMinutes / 60)}h ${tech.totalMinutes % 60}m`
+                                  : `${tech.totalMinutes}m`}
+                              </td>
+                              <td className="px-3 py-2 text-center text-gray-600">
+                                {tech.visitCount > 0 ? Math.round(tech.totalMinutes / tech.visitCount) : 0}m
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Day of Week Analysis */}
               <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">

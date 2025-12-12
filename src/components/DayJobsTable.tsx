@@ -1,13 +1,14 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { MapPin, Clock, AlertTriangle } from 'lucide-react';
-import { JobDetail } from '@/types/reports';
+import { MapPin, Clock, AlertTriangle, Building } from 'lucide-react';
+import { JobDetail, OfficeVisitDetail } from '@/types/reports';
 
 interface DayJobsTableProps {
   date: string;
   dayOfWeek: string;
   jobs: JobDetail[];
+  officeVisits?: OfficeVisitDetail[];
   onShowGpsLocation: (job: JobDetail) => void;
 }
 
@@ -15,6 +16,7 @@ export default function DayJobsTable({
   date,
   dayOfWeek,
   jobs,
+  officeVisits,
   onShowGpsLocation,
 }: DayJobsTableProps) {
   const formattedDate = format(parseISO(date), 'MMMM d, yyyy');
@@ -131,6 +133,71 @@ export default function DayJobsTable({
           <div className="flex items-center gap-1">
             <MapPin className="w-3 h-3" />
             First job address: {jobs.find(j => j.isFirstJob)?.jobAddress || jobs[0].jobAddress}
+          </div>
+        </div>
+      )}
+
+      {/* Office Visits */}
+      {officeVisits && officeVisits.length > 0 && (
+        <div className="px-4 py-3 border-t bg-purple-50">
+          <div className="flex items-center gap-2 mb-2">
+            <Building className="w-4 h-4 text-purple-600" />
+            <span className="text-sm font-medium text-purple-900">Office Activity</span>
+          </div>
+          <div className="space-y-1.5">
+            {officeVisits.map((visit, idx) => {
+              const isMidDay = visit.visitType === 'mid_day_visit';
+              const visitLabel = visit.visitType === 'morning_departure'
+                ? 'Left Office'
+                : visit.visitType === 'mid_day_visit'
+                ? 'Mid-Day Visit'
+                : 'Returned to Office';
+              const emoji = visit.visitType === 'morning_departure'
+                ? '🚀'
+                : visit.visitType === 'mid_day_visit'
+                ? '🏢'
+                : '🏠';
+
+              return (
+                <div
+                  key={idx}
+                  className={`flex items-center justify-between text-sm px-3 py-1.5 rounded ${
+                    isMidDay
+                      ? 'bg-purple-100 border border-purple-200'
+                      : 'bg-white border border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>{emoji}</span>
+                    <span className={isMidDay ? 'font-medium text-purple-900' : 'text-gray-700'}>
+                      {visitLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-600">
+                    {visit.arrivalTime && (
+                      <span>
+                        {visit.visitType === 'morning_departure' ? '' : 'Arrived '}
+                        {format(parseISO(visit.arrivalTime), 'h:mm a')}
+                      </span>
+                    )}
+                    {visit.arrivalTime && visit.departureTime && (
+                      <span className="text-gray-400">→</span>
+                    )}
+                    {visit.departureTime && (
+                      <span>
+                        {visit.visitType === 'morning_departure' ? 'Left ' : ''}
+                        {format(parseISO(visit.departureTime), 'h:mm a')}
+                      </span>
+                    )}
+                    {visit.durationMinutes !== null && visit.durationMinutes > 0 && (
+                      <span className={`ml-1 ${isMidDay ? 'text-purple-700 font-medium' : 'text-gray-500'}`}>
+                        ({visit.durationMinutes}m)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
