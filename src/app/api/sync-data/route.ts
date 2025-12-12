@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { getTechnicians, getAppointments, getAppointmentAssignmentsByJobId, getJob, getLocation } from '@/lib/service-titan';
 import { getVehicleGPSData, GPSHistoryPoint } from '@/lib/verizon-connect';
-import { parseISO, differenceInMinutes, subMinutes, addHours } from 'date-fns';
-import { toZonedTime, fromZonedTime, format } from 'date-fns-tz';
+import { parseISO, differenceInMinutes, subMinutes, addHours, format } from 'date-fns';
+import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import { findArrivalTime, ARRIVAL_RADIUS_FEET } from '@/lib/geo-utils';
 
 export const maxDuration = 60; // Vercel/Netlify function timeout (up to 60s on pro)
@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
         );
 
         if (arrival) {
-          console.log(`    GPS Arrival: ${format(arrival.arrivalTime, 'h:mm:ss a')} (${Math.round(arrival.distanceFeet)} ft from job)`);
+          console.log(`    GPS Arrival: ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm:ss a')} EST (${Math.round(arrival.distanceFeet)} ft from job)`);
         } else {
           console.log(`    GPS Arrival: NOT DETECTED within ${ARRIVAL_RADIUS_FEET} feet`);
         }
@@ -302,7 +302,7 @@ export async function POST(req: NextRequest) {
                 variance_minutes: varianceMinutes,
                 is_late: true,
                 is_first_job: true,
-                notes: `GPS arrival at ${format(arrival.arrivalTime, 'h:mm a', { timeZone: EST_TIMEZONE })} - ${varianceMinutes}m late (${Math.round(arrival.distanceFeet)} ft from job)`,
+                notes: `GPS arrival at ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm a')} - ${varianceMinutes}m late (${Math.round(arrival.distanceFeet)} ft from job)`,
               }, {
                 onConflict: 'job_id',
               });
