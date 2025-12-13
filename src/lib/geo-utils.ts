@@ -241,6 +241,11 @@ export interface TechOfficeConfig {
 }
 
 /**
+ * Radius for determining if truck started from "home" (500 feet)
+ */
+export const HOME_RADIUS_FEET = 500;
+
+/**
  * Detect office visits from vehicle segments
  *
  * Logic:
@@ -249,7 +254,13 @@ export interface TechOfficeConfig {
  * - If arrival is BEFORE first job scheduled time -> morning_departure (getting ready)
  * - If arrival is AFTER 5 PM Eastern -> end_of_day
  * - Otherwise -> mid_day_visit (the problematic ones)
- * - If tech takes truck home AND has first job AND went to office first -> isUnnecessary = true
+ *
+ * Unnecessary visit detection:
+ * - If tech takes truck home AND has home location set
+ * - AND truck actually started from within 500ft of home
+ * - AND has first job scheduled
+ * - AND went to office before first job
+ * - -> isUnnecessary = true
  *
  * @param segments - Vehicle segments from Verizon API (should be for a single day)
  * @param firstJobScheduledTime - When the tech's first job is scheduled (to distinguish morning from mid-day)
@@ -283,6 +294,19 @@ export function detectOfficeVisits(
   const firstSegment = sortedSegments[0];
   const startsAtOffice = firstSegment.StartLocation &&
     isNearOffice(firstSegment.StartLocation.Latitude, firstSegment.StartLocation.Longitude);
+
+  // Check if truck started from home (for unnecessary visit detection)
+  // Only relevant if tech takes truck home AND we have their home location
+  let startedFromHome = false;
+  if (techConfig?.takesTruckHome && techConfig?.homeLocation && firstSegment.StartLocation) {
+    startedFromHome = isWithinRadius(
+      firstSegment.StartLocation.Latitude,
+      firstSegment.StartLocation.Longitude,
+      techConfig.homeLocation.lat,
+      techConfig.homeLocation.lon,
+      HOME_RADIUS_FEET
+    );
+  }
 
   if (startsAtOffice) {
     const departureTime = parseVerizonUtcTimestamp(firstSegment.StartDateUtc!);
@@ -362,17 +386,17 @@ export function detectOfficeVisits(
 
     if (i === 0 && startsAtOffice) {
       visitType = 'morning_departure';
-      // If tech takes truck home but started at office, that's expected (they might park at office sometimes)
-      // BUT if they have a first job scheduled, why didn't they go straight there?
-      if (techConfig?.takesTruckHome && firstJobScheduledTime) {
-        visitType = 'mid_day_visit'; // Reclassify as problematic
-        isUnnecessary = true;
-      }
+      // If truck started at office but tech supposedly takes it home, they left it at office
+      // This is NOT unnecessary - they had to come get the truck
     }
     // Before first job scheduled time = morning (getting ready, loading truck, etc.)
     else if (firstJobScheduledTime && arrivalTime.getTime() < firstJobScheduledTime.getTime()) {
-      // If tech takes truck home and went to office before first job, it's unnecessary
-      if (techConfig?.takesTruckHome) {
+      // Only flag as unnecessary if:
+      // 1. Tech takes truck home
+      // 2. We have their home location set
+      // 3. Truck actually started from near home (within 500ft)
+      // 4. They went to office before their first job
+      if (startedFromHome) {
         visitType = 'mid_day_visit'; // Reclassify as problematic
         isUnnecessary = true;
       } else {
