@@ -62,6 +62,8 @@ export default function SettingsPage() {
   const [homeSuggestions, setHomeSuggestions] = useState<Record<string, HomeLocationSuggestion | null>>({});
   const [editingHomeAddress, setEditingHomeAddress] = useState<string | null>(null);
   const [manualHomeAddress, setManualHomeAddress] = useState<string>('');
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -284,27 +286,54 @@ export default function SettingsPage() {
   const cancelEditingHomeAddress = () => {
     setEditingHomeAddress(null);
     setManualHomeAddress('');
+    setGeocodeError(null);
   };
 
   const saveManualHomeAddress = async (techId: string) => {
     if (!manualHomeAddress.trim()) {
-      setError('Please enter an address');
+      setGeocodeError('Please enter an address');
       return;
     }
 
-    setSaving(techId);
+    setGeocoding(true);
+    setGeocodeError(null);
     setError(null);
 
     try {
+      // First, geocode the address to validate and get coordinates
+      const geocodeResponse = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: manualHomeAddress.trim() }),
+      });
+
+      const geocodeData = await geocodeResponse.json();
+
+      if (!geocodeData.success) {
+        setGeocodeError(geocodeData.error || 'Could not validate address');
+        setGeocoding(false);
+        return;
+      }
+
+      // Warn if low confidence match
+      if (geocodeData.confidence === 'low') {
+        setGeocodeError('Address matched to city/area level only. Please enter a more specific address with street number.');
+        setGeocoding(false);
+        return;
+      }
+
+      setGeocoding(false);
+      setSaving(techId);
+
+      // Save the validated address with coordinates
       const response = await fetch('/api/technicians', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: techId,
-          home_address: manualHomeAddress.trim(),
-          // Clear lat/lon since we don't have coordinates for manual entry
-          home_latitude: null,
-          home_longitude: null,
+          home_address: geocodeData.displayName,
+          home_latitude: geocodeData.latitude,
+          home_longitude: geocodeData.longitude,
         }),
       });
 
@@ -316,9 +345,9 @@ export default function SettingsPage() {
           t.id === techId
             ? {
                 ...t,
-                home_address: manualHomeAddress.trim(),
-                home_latitude: null,
-                home_longitude: null,
+                home_address: geocodeData.displayName,
+                home_latitude: geocodeData.latitude,
+                home_longitude: geocodeData.longitude,
               }
             : t
         )
@@ -326,10 +355,12 @@ export default function SettingsPage() {
 
       setEditingHomeAddress(null);
       setManualHomeAddress('');
-      setSuccess('Home address saved');
+      setGeocodeError(null);
+      setSuccess('Home address validated and saved');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.message);
+      setGeocoding(false);
     } finally {
       setSaving(null);
     }
@@ -669,31 +700,49 @@ export default function SettingsPage() {
                               <input
                                 type="text"
                                 value={manualHomeAddress}
-                                onChange={(e) => setManualHomeAddress(e.target.value)}
-                                placeholder="Enter home address..."
-                                className="border rounded px-2 py-1 text-sm w-full min-w-[200px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onChange={(e) => {
+                                  setManualHomeAddress(e.target.value);
+                                  setGeocodeError(null);
+                                }}
+                                placeholder="Enter home address (e.g., 123 Main St, City, NC)"
+                                className={`border rounded px-2 py-1 text-sm w-full min-w-[250px] focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                  geocodeError ? 'border-red-300' : ''
+                                }`}
                                 autoFocus
+                                disabled={geocoding || isSaving}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
+                                  if (e.key === 'Enter' && !geocoding) {
                                     saveManualHomeAddress(tech.id);
                                   } else if (e.key === 'Escape') {
                                     cancelEditingHomeAddress();
                                   }
                                 }}
                               />
+                              {geocodeError && (
+                                <p className="text-xs text-red-600">{geocodeError}</p>
+                              )}
                               <div className="flex items-center gap-2">
                                 <button
                                   onClick={() => saveManualHomeAddress(tech.id)}
-                                  disabled={isSaving}
+                                  disabled={isSaving || geocoding}
                                   className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:opacity-50"
                                 >
-                                  <Save className="w-3 h-3" />
-                                  Save
+                                  {geocoding ? (
+                                    <>
+                                      <RefreshCw className="w-3 h-3 animate-spin" />
+                                      Validating...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Save className="w-3 h-3" />
+                                      Validate & Save
+                                    </>
+                                  )}
                                 </button>
                                 <button
                                   onClick={cancelEditingHomeAddress}
-                                  disabled={isSaving}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                                  disabled={isSaving || geocoding}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition-colors disabled:opacity-50"
                                 >
                                   Cancel
                                 </button>
