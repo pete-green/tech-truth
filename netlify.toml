@@ -8,6 +8,14 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
+[functions]
+  # Increase function timeout for sync operations (max 26s on free tier)
+  external_node_modules = ["@netlify/functions"]
+
+# Allow longer timeout for API routes
+[functions."*"]
+  node_bundler = "esbuild"
+
 # Scheduled function for arrival sync
 # Runs every 15 minutes during work hours (6 AM - 6 PM EST, Mon-Fri)
 [functions."scheduled-sync"]

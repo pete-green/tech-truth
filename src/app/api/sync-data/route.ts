@@ -152,11 +152,6 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // If we only want first jobs and we've already processed this tech's first job, skip
-        if (firstJobOnly && processedTechFirstJob.has(stTechId)) {
-          continue;
-        }
-
         const scheduledTime = new Date(appointment.start);
 
         // Step 3b: Get job details for location AND job type
@@ -172,12 +167,20 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Mark this tech's first job as being processed (only for non-follow-up jobs)
-        processedTechFirstJob.add(stTechId);
+        // Determine if this is the first job for this technician
+        const isFirstJob = !processedTechFirstJob.has(stTechId);
 
-        // Store first job scheduled time for office visit classification
-        // This helps distinguish morning departure (before first job) from mid-day visits
-        techFirstJobTime.set(techData.id, scheduledTime);
+        // Mark this tech's first job as being processed (only for non-follow-up jobs)
+        if (isFirstJob) {
+          processedTechFirstJob.add(stTechId);
+          // Store first job scheduled time for office visit classification
+          techFirstJobTime.set(techData.id, scheduledTime);
+        }
+
+        // If we only want first jobs and this isn't the first, skip
+        if (firstJobOnly && !isFirstJob) {
+          continue;
+        }
 
         if (!jobDetails.locationId) {
           errors.push({
@@ -206,86 +209,93 @@ export async function POST(req: NextRequest) {
         const jobLon = location.address.longitude;
         const jobAddress = `${location.address.street}, ${location.address.city}, ${location.address.state} ${location.address.zip}`;
 
-        console.log(`  Processing: ${techData.name} - Job ${appointment.jobId} at ${format(scheduledTime, 'h:mm a')}`);
+        console.log(`  Processing: ${techData.name} - Job ${appointment.jobId} at ${format(scheduledTime, 'h:mm a')}${isFirstJob ? ' (FIRST JOB)' : ''}`);
         console.log(`    Address: ${jobAddress}`);
-        console.log(`    Coordinates: ${jobLat}, ${jobLon}`);
 
-        // Step 3d: Get GPS history for this technician's truck
-        // Window: 30 minutes before scheduled time to 2 hours after
-        const gpsStartTime = subMinutes(scheduledTime, 30).toISOString();
-        const gpsEndTime = addHours(scheduledTime, 2).toISOString();
+        // Only do GPS detection for first jobs (saves time and API calls)
+        let arrival: { arrivalTime: Date; distanceFeet: number } | null = null;
 
-        // Check if this is same-day data (segments are more reliable for today)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const isSameDay = scheduledTime >= today;
+        if (isFirstJob) {
+          console.log(`    Coordinates: ${jobLat}, ${jobLon}`);
 
-        let gpsHistory: GPSHistoryPoint[] = [];
-        let segments: VehicleSegment[] = [];
-        let segmentArrival: { arrivalTime: Date; segment: VehicleSegment; distanceFeet: number } | null = null;
+          // Step 3d: Get GPS history for this technician's truck
+          // Window: 30 minutes before scheduled time to 2 hours after
+          const gpsStartTime = subMinutes(scheduledTime, 30).toISOString();
+          const gpsEndTime = addHours(scheduledTime, 2).toISOString();
 
-        // For same-day data, try segment-based arrival detection first (more accurate)
-        if (isSameDay) {
-          try {
-            const todayStr = format(today, 'yyyy-MM-dd') + 'T00:00:00Z';
-            const segmentsData = await getVehicleSegments(techData.verizon_vehicle_id, todayStr);
-            segments = segmentsData.Segments || [];
-            console.log(`    Vehicle segments: ${segments.length}`);
+          // Check if this is same-day data (segments are more reliable for today)
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const isSameDay = scheduledTime >= today;
 
-            // Try to find arrival from segment end times (truck stopped)
-            segmentArrival = findArrivalFromSegments(
-              segments,
-              jobLat,
-              jobLon,
-              subMinutes(scheduledTime, 30),
-              ARRIVAL_RADIUS_FEET
-            );
+          let gpsHistory: GPSHistoryPoint[] = [];
+          let segments: VehicleSegment[] = [];
+          let segmentArrival: { arrivalTime: Date; segment: VehicleSegment; distanceFeet: number } | null = null;
 
-            if (segmentArrival) {
-              console.log(`    Truck stopped: ${formatInTimeZone(segmentArrival.arrivalTime, EST_TIMEZONE, 'h:mm:ss a')} EST (${Math.round(segmentArrival.distanceFeet)} ft from job)`);
+          // For same-day data, try segment-based arrival detection first (more accurate)
+          if (isSameDay) {
+            try {
+              const todayStr = format(today, 'yyyy-MM-dd') + 'T00:00:00Z';
+              const segmentsData = await getVehicleSegments(techData.verizon_vehicle_id, todayStr);
+              segments = segmentsData.Segments || [];
+              console.log(`    Vehicle segments: ${segments.length}`);
+
+              // Try to find arrival from segment end times (truck stopped)
+              segmentArrival = findArrivalFromSegments(
+                segments,
+                jobLat,
+                jobLon,
+                subMinutes(scheduledTime, 30),
+                ARRIVAL_RADIUS_FEET
+              );
+
+              if (segmentArrival) {
+                console.log(`    Truck stopped: ${formatInTimeZone(segmentArrival.arrivalTime, EST_TIMEZONE, 'h:mm:ss a')} EST (${Math.round(segmentArrival.distanceFeet)} ft from job)`);
+              }
+            } catch (segError: any) {
+              console.log(`    Segments fetch failed, falling back to GPS: ${segError.message}`);
             }
-          } catch (segError: any) {
-            console.log(`    Segments fetch failed, falling back to GPS: ${segError.message}`);
           }
-        }
 
-        // If no segment arrival found, fall back to GPS point-based detection
-        if (!segmentArrival) {
-          try {
-            gpsHistory = await getVehicleGPSData(
-              techData.verizon_vehicle_id,
-              gpsStartTime,
-              gpsEndTime
-            );
-            console.log(`    GPS points: ${gpsHistory.length}`);
-          } catch (gpsError: any) {
-            errors.push({
-              type: 'gps_fetch',
-              techName: techData.name,
-              vehicleId: techData.verizon_vehicle_id,
-              error: gpsError.message,
-            });
-            continue;
+          // If no segment arrival found, fall back to GPS point-based detection
+          if (!segmentArrival) {
+            try {
+              gpsHistory = await getVehicleGPSData(
+                techData.verizon_vehicle_id,
+                gpsStartTime,
+                gpsEndTime
+              );
+              console.log(`    GPS points: ${gpsHistory.length}`);
+            } catch (gpsError: any) {
+              errors.push({
+                type: 'gps_fetch',
+                techName: techData.name,
+                vehicleId: techData.verizon_vehicle_id,
+                error: gpsError.message,
+              });
+              // For first job, GPS failure is critical - skip
+              continue;
+            }
           }
-        }
 
-        // Step 3e: Determine arrival - prefer segment-based (truck stopped) over GPS proximity
-        const arrival = segmentArrival || findArrivalTime(
-          gpsHistory,
-          jobLat,
-          jobLon,
-          subMinutes(scheduledTime, 30),
-          ARRIVAL_RADIUS_FEET
-        );
+          // Step 3e: Determine arrival - prefer segment-based (truck stopped) over GPS proximity
+          arrival = segmentArrival || findArrivalTime(
+            gpsHistory,
+            jobLat,
+            jobLon,
+            subMinutes(scheduledTime, 30),
+            ARRIVAL_RADIUS_FEET
+          );
 
-        // Determine if arrival was from segment (truck stopped) or GPS proximity
-        const arrivalType = segmentArrival ? 'segment' : 'gps';
+          // Determine if arrival was from segment (truck stopped) or GPS proximity
+          const arrivalType = segmentArrival ? 'segment' : 'gps';
 
-        if (arrival) {
-          const typeLabel = arrivalType === 'segment' ? 'Truck stopped' : 'GPS Arrival';
-          console.log(`    ${typeLabel}: ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm:ss a')} EST (${Math.round(arrival.distanceFeet)} ft from job)`);
-        } else {
-          console.log(`    Arrival: NOT DETECTED within ${ARRIVAL_RADIUS_FEET} feet`);
+          if (arrival) {
+            const typeLabel = arrivalType === 'segment' ? 'Truck stopped' : 'GPS Arrival';
+            console.log(`    ${typeLabel}: ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm:ss a')} EST (${Math.round(arrival.distanceFeet)} ft from job)`);
+          } else {
+            console.log(`    Arrival: NOT DETECTED within ${ARRIVAL_RADIUS_FEET} feet`);
+          }
         }
 
         // Step 3f: Create/update job record
@@ -303,7 +313,7 @@ export async function POST(req: NextRequest) {
             job_address: jobAddress,
             job_latitude: jobLat,
             job_longitude: jobLon,
-            is_first_job_of_day: true,
+            is_first_job_of_day: isFirstJob,
             status: appointment.status || 'Scheduled',
             updated_at: new Date().toISOString(),
           }, {
@@ -319,29 +329,11 @@ export async function POST(req: NextRequest) {
 
         jobsProcessed++;
 
-        // Step 3g: Store GPS events for this job (sample, not all)
-        if (gpsHistory.length > 0) {
-          const gpsInserts = gpsHistory.slice(0, 50).map((point) => ({
-            technician_id: techData.id,
-            job_id: jobData.id,
-            latitude: point.Latitude,
-            longitude: point.Longitude,
-            timestamp: point.UpdateUtc,
-            speed: point.Speed,
-            heading: null,
-            address: point.Address?.AddressLine1 || null,
-            event_type: 'history_sync',
-          }));
-
-          await supabase.from('gps_events').insert(gpsInserts);
-        }
-
-        // Step 3h: Calculate variance and create discrepancy if late
-        // ONLY create discrepancies when we have actual GPS-verified arrival data
+        // Step 3g: Calculate variance and create discrepancy if late (first jobs only)
         let varianceMinutes: number | null = null;
         let isLate = false;
 
-        if (arrival) {
+        if (isFirstJob && arrival) {
           varianceMinutes = differenceInMinutes(arrival.arrivalTime, scheduledTime);
           isLate = varianceMinutes > 10; // More than 10 minutes late
 
@@ -357,7 +349,7 @@ export async function POST(req: NextRequest) {
                 variance_minutes: varianceMinutes,
                 is_late: true,
                 is_first_job: true,
-                notes: `${arrivalType === 'segment' ? 'Truck stopped' : 'GPS arrival'} at ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm a')} - ${varianceMinutes}m late (${Math.round(arrival.distanceFeet)} ft from job)`,
+                notes: `GPS arrival at ${formatInTimeZone(arrival.arrivalTime, EST_TIMEZONE, 'h:mm a')} - ${varianceMinutes}m late (${Math.round(arrival.distanceFeet)} ft from job)`,
               }, {
                 onConflict: 'job_id',
               });
@@ -369,8 +361,8 @@ export async function POST(req: NextRequest) {
           } else {
             console.log(`    ✅ ON TIME: ${Math.abs(varianceMinutes)}m ${varianceMinutes < 0 ? 'early' : 'after scheduled'}`);
           }
-        } else {
-          // No GPS arrival detected - log but don't create a discrepancy with fake data
+        } else if (isFirstJob) {
+          // First job but no GPS arrival detected
           console.log(`    ⚠️ NO GPS ARRIVAL DETECTED - cannot verify arrival time`);
         }
 
