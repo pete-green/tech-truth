@@ -36,5 +36,11 @@ export const MapRecenter = dynamic(
   { ssr: false }
 );
 
+// Draggable marker component
+export const DraggableMarker = dynamic(
+  () => import('./DraggableMarker'),
+  { ssr: false }
+);
+
 // Re-export types for convenience
 export type MapContainerProps = ComponentProps<typeof MapContainer>;
