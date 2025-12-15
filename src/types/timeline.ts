@@ -10,7 +10,11 @@ export type TimelineEventType =
   | 'arrived_unknown'
   | 'left_unknown'
   | 'arrived_custom'
-  | 'left_custom';
+  | 'left_custom'
+  | 'clock_in'
+  | 'clock_out'
+  | 'meal_start'
+  | 'meal_end';
 
 export interface TimelineEvent {
   id: string;
@@ -43,6 +47,17 @@ export interface TimelineEvent {
   customLocationName?: string;
   customLocationLogo?: string;
   customLocationCategory?: string;
+
+  // Clock event info (for clock_in/clock_out/meal_start/meal_end events)
+  punchId?: string;
+  origin?: string;  // 'Mobile', 'Web', etc.
+  isViolation?: boolean;
+  violationReason?: string;
+  expectedLocationType?: string;
+  canBeExcused?: boolean;  // For violations that managers can excuse
+  isExcused?: boolean;  // If an office visit was excused
+  excusedReason?: string;  // 'pickup_helper', 'meeting', 'manager_request', etc.
+  gpsLocationType?: string;  // Where GPS showed they were
 }
 
 export interface DayTimeline {
@@ -75,6 +90,24 @@ export interface TechTimelineConfig {
   excludeFromOfficeVisits?: boolean;
 }
 
+// Punch record from database for timeline
+export interface TimelinePunchRecord {
+  id: string;
+  punch_time: string;
+  punch_type: string;  // 'ClockIn', 'ClockOut', 'MealStart', 'MealEnd'
+  clock_in_time?: string | null;
+  clock_out_time?: string | null;
+  gps_latitude?: number | null;
+  gps_longitude?: number | null;
+  gps_address?: string | null;
+  gps_location_type?: string | null;
+  is_violation?: boolean | null;
+  violation_reason?: string | null;
+  expected_location_type?: string | null;
+  can_be_excused?: boolean | null;
+  origin?: string | null;
+}
+
 // Input for timeline building
 export interface TimelineInput {
   date: string;
@@ -84,4 +117,9 @@ export interface TimelineInput {
   jobs: import('./reports').JobDetail[];
   techConfig: TechTimelineConfig;
   customLocations?: import('./custom-location').CustomLocation[];
+  punches?: TimelinePunchRecord[];
+  excusedOfficeVisit?: {
+    reason: string;
+    notes?: string;
+  };
 }

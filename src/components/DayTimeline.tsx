@@ -1,7 +1,7 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag } from 'lucide-react';
+import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check } from 'lucide-react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 import { getCategoryIcon, getCategoryColors } from '@/lib/location-logos';
 
@@ -53,6 +53,12 @@ function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEven
     case 'left_custom':
       // Show category icon as text if available
       return <Tag className="w-4 h-4" />;
+    case 'clock_in':
+    case 'clock_out':
+      return <Clock className="w-4 h-4" />;
+    case 'meal_start':
+    case 'meal_end':
+      return <Coffee className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
@@ -80,6 +86,14 @@ function getEventLabel(event: TimelineEvent): string {
       return `Stopped at ${event.customLocationName || 'Custom Location'}`;
     case 'left_custom':
       return `Left ${event.customLocationName || 'Custom Location'}`;
+    case 'clock_in':
+      return 'Clocked In';
+    case 'clock_out':
+      return 'Clocked Out';
+    case 'meal_start':
+      return 'Meal Break Started';
+    case 'meal_end':
+      return 'Meal Break Ended';
     default:
       return 'Unknown Event';
   }
@@ -108,6 +122,26 @@ function getEventStyles(event: TimelineEvent): {
       border: 'border-orange-300',
       iconBg: 'bg-orange-500',
       text: 'text-orange-900',
+    };
+  }
+
+  // Clock events with violations - red
+  if ((event.type === 'clock_in' || event.type === 'clock_out') && event.isViolation && !event.isExcused) {
+    return {
+      bg: 'bg-red-50',
+      border: 'border-red-300',
+      iconBg: 'bg-red-500',
+      text: 'text-red-900',
+    };
+  }
+
+  // Clock events that were excused - green
+  if ((event.type === 'clock_in' || event.type === 'clock_out') && event.isExcused) {
+    return {
+      bg: 'bg-green-50',
+      border: 'border-green-200',
+      iconBg: 'bg-green-500',
+      text: 'text-green-900',
     };
   }
 
@@ -159,6 +193,22 @@ function getEventStyles(event: TimelineEvent): {
         border: categoryColors.border,
         iconBg: 'bg-teal-500',
         text: categoryColors.text,
+      };
+    case 'clock_in':
+    case 'clock_out':
+      return {
+        bg: 'bg-cyan-50',
+        border: 'border-cyan-200',
+        iconBg: 'bg-cyan-500',
+        text: 'text-cyan-900',
+      };
+    case 'meal_start':
+    case 'meal_end':
+      return {
+        bg: 'bg-amber-50',
+        border: 'border-amber-200',
+        iconBg: 'bg-amber-500',
+        text: 'text-amber-900',
       };
     default:
       return {
@@ -234,6 +284,22 @@ function TimelineEventCard({
                   UNNECESSARY
                 </span>
               )}
+
+              {/* Violation badge for clock events */}
+              {(event.type === 'clock_in' || event.type === 'clock_out') && event.isViolation && !event.isExcused && (
+                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium">
+                  <AlertTriangle className="w-3 h-3" />
+                  VIOLATION
+                </span>
+              )}
+
+              {/* Excused badge for clock events */}
+              {(event.type === 'clock_in' || event.type === 'clock_out') && event.isExcused && (
+                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium">
+                  <Check className="w-3 h-3" />
+                  EXCUSED
+                </span>
+              )}
             </div>
 
             {/* Time */}
@@ -268,6 +334,38 @@ function TimelineEventCard({
           {event.scheduledTime && (
             <div className="text-xs text-gray-500 mt-1">
               Scheduled: {format(parseISO(event.scheduledTime), 'h:mm a')}
+            </div>
+          )}
+
+          {/* Violation reason for clock events */}
+          {(event.type === 'clock_in' || event.type === 'clock_out') && event.isViolation && event.violationReason && !event.isExcused && (
+            <div className="text-xs text-red-600 mt-1">
+              {event.violationReason}
+            </div>
+          )}
+
+          {/* Excused reason for clock events */}
+          {(event.type === 'clock_in' || event.type === 'clock_out') && event.isExcused && event.excusedReason && (
+            <div className="text-xs text-green-600 mt-1">
+              Excused: {event.excusedReason === 'pickup_helper' ? 'Picking up helper' :
+                       event.excusedReason === 'meeting' ? 'Company meeting' :
+                       event.excusedReason === 'manager_request' ? 'Manager request' :
+                       event.excusedReason}
+            </div>
+          )}
+
+          {/* GPS location type for clock events */}
+          {(event.type === 'clock_in' || event.type === 'clock_out') && event.gpsLocationType && (
+            <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+              <MapPin className="w-3 h-3" />
+              GPS Location: {event.gpsLocationType.charAt(0).toUpperCase() + event.gpsLocationType.slice(1)}
+            </div>
+          )}
+
+          {/* Origin (Mobile, Web) for clock events */}
+          {(event.type === 'clock_in' || event.type === 'clock_out' || event.type === 'meal_start' || event.type === 'meal_end') && event.origin && (
+            <div className="text-xs text-gray-400 mt-1">
+              via {event.origin}
             </div>
           )}
 

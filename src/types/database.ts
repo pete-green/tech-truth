@@ -65,7 +65,7 @@ export type Database = {
           {
             foreignKeyName: "arrival_discrepancies_job_id_fkey"
             columns: ["job_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "jobs"
             referencedColumns: ["id"]
           },
@@ -88,6 +88,8 @@ export type Database = {
       custom_locations: {
         Row: {
           address: string | null
+          boundary_polygon: Json | null
+          boundary_type: string | null
           category: string | null
           center_latitude: number
           center_longitude: number
@@ -100,6 +102,8 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          boundary_polygon?: Json | null
+          boundary_type?: string | null
           category?: string | null
           center_latitude: number
           center_longitude: number
@@ -112,6 +116,8 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          boundary_polygon?: Json | null
+          boundary_type?: string | null
           category?: string | null
           center_latitude?: number
           center_longitude?: number
@@ -123,6 +129,51 @@ export type Database = {
           radius_feet?: number | null
         }
         Relationships: []
+      }
+      excused_office_visits: {
+        Row: {
+          created_at: string | null
+          excused_by: string | null
+          id: string
+          notes: string | null
+          reason: string
+          technician_id: string
+          visit_date: string
+        }
+        Insert: {
+          created_at?: string | null
+          excused_by?: string | null
+          id?: string
+          notes?: string | null
+          reason: string
+          technician_id: string
+          visit_date: string
+        }
+        Update: {
+          created_at?: string | null
+          excused_by?: string | null
+          id?: string
+          notes?: string | null
+          reason?: string
+          technician_id?: string
+          visit_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "excused_office_visits_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technician_performance"
+            referencedColumns: ["technician_id"]
+          },
+          {
+            foreignKeyName: "excused_office_visits_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       gps_events: {
         Row: {
@@ -317,6 +368,102 @@ export type Database = {
           },
         ]
       }
+      punch_records: {
+        Row: {
+          can_be_excused: boolean | null
+          clock_in_time: string | null
+          clock_out_time: string | null
+          cost_center: string | null
+          cost_center_name: string | null
+          created_at: string | null
+          duration_hours: number | null
+          expected_location_type: string | null
+          gps_address: string | null
+          gps_distance_from_punch_feet: number | null
+          gps_latitude: number | null
+          gps_location_type: string | null
+          gps_longitude: number | null
+          gps_timestamp: string | null
+          id: string
+          is_violation: boolean | null
+          job_code: string | null
+          origin: string | null
+          paylocity_employee_id: string
+          punch_date: string
+          punch_time: string
+          punch_type: string
+          technician_id: string | null
+          violation_reason: string | null
+        }
+        Insert: {
+          can_be_excused?: boolean | null
+          clock_in_time?: string | null
+          clock_out_time?: string | null
+          cost_center?: string | null
+          cost_center_name?: string | null
+          created_at?: string | null
+          duration_hours?: number | null
+          expected_location_type?: string | null
+          gps_address?: string | null
+          gps_distance_from_punch_feet?: number | null
+          gps_latitude?: number | null
+          gps_location_type?: string | null
+          gps_longitude?: number | null
+          gps_timestamp?: string | null
+          id?: string
+          is_violation?: boolean | null
+          job_code?: string | null
+          origin?: string | null
+          paylocity_employee_id: string
+          punch_date: string
+          punch_time: string
+          punch_type: string
+          technician_id?: string | null
+          violation_reason?: string | null
+        }
+        Update: {
+          can_be_excused?: boolean | null
+          clock_in_time?: string | null
+          clock_out_time?: string | null
+          cost_center?: string | null
+          cost_center_name?: string | null
+          created_at?: string | null
+          duration_hours?: number | null
+          expected_location_type?: string | null
+          gps_address?: string | null
+          gps_distance_from_punch_feet?: number | null
+          gps_latitude?: number | null
+          gps_location_type?: string | null
+          gps_longitude?: number | null
+          gps_timestamp?: string | null
+          id?: string
+          is_violation?: boolean | null
+          job_code?: string | null
+          origin?: string | null
+          paylocity_employee_id?: string
+          punch_date?: string
+          punch_time?: string
+          punch_type?: string
+          technician_id?: string | null
+          violation_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "punch_records_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technician_performance"
+            referencedColumns: ["technician_id"]
+          },
+          {
+            foreignKeyName: "punch_records_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_logs: {
         Row: {
           completed_at: string | null
@@ -358,6 +505,7 @@ export type Database = {
           home_longitude: number | null
           id: string
           name: string
+          paylocity_employee_id: string | null
           phone: string | null
           st_technician_id: number
           takes_truck_home: boolean | null
@@ -375,6 +523,7 @@ export type Database = {
           home_longitude?: number | null
           id?: string
           name: string
+          paylocity_employee_id?: string | null
           phone?: string | null
           st_technician_id: number
           takes_truck_home?: boolean | null
@@ -392,6 +541,7 @@ export type Database = {
           home_longitude?: number | null
           id?: string
           name?: string
+          paylocity_employee_id?: string | null
           phone?: string | null
           st_technician_id?: number
           takes_truck_home?: boolean | null
@@ -595,6 +745,12 @@ export type CompositeTypes<
     ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
 
+export const Constants = {
+  public: {
+    Enums: {},
+  },
+} as const
+
 // Convenience types
 export type Technician = Database['public']['Tables']['technicians']['Row'];
 export type Job = Database['public']['Tables']['jobs']['Row'];
@@ -604,3 +760,5 @@ export type SyncLog = Database['public']['Tables']['sync_logs']['Row'];
 export type Truck = Database['public']['Tables']['trucks']['Row'];
 export type OfficeVisit = Database['public']['Tables']['office_visits']['Row'];
 export type CustomLocationDb = Database['public']['Tables']['custom_locations']['Row'];
+export type PunchRecord = Database['public']['Tables']['punch_records']['Row'];
+export type ExcusedOfficeVisit = Database['public']['Tables']['excused_office_visits']['Row'];

@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase';
 import { getVehicleSegments } from '@/lib/verizon-connect';
 import { buildDayTimeline } from '@/lib/timeline-builder';
 import { JobDetail } from '@/types/reports';
-import { TechTimelineConfig, DayTimeline } from '@/types/timeline';
+import { TechTimelineConfig, DayTimeline, TimelinePunchRecord } from '@/types/timeline';
 import { CustomLocationRow, rowToCustomLocation } from '@/types/custom-location';
 import { OFFICE_LOCATION } from '@/lib/geo-utils';
 import { parseISO, differenceInMinutes } from 'date-fns';
@@ -150,6 +150,59 @@ export async function GET(req: NextRequest) {
     const customLocations = (customLocationRows as CustomLocationRow[] || [])
       .map(rowToCustomLocation);
 
+    // Fetch punch records for this technician on this date
+    const { data: punchRecords } = await supabase
+      .from('punch_records')
+      .select(`
+        id,
+        punch_time,
+        punch_type,
+        clock_in_time,
+        clock_out_time,
+        gps_latitude,
+        gps_longitude,
+        gps_address,
+        gps_location_type,
+        is_violation,
+        violation_reason,
+        expected_location_type,
+        can_be_excused,
+        origin
+      `)
+      .eq('technician_id', technicianId)
+      .eq('punch_date', date)
+      .order('punch_time', { ascending: true });
+
+    // Convert to TimelinePunchRecord format
+    const punches: TimelinePunchRecord[] = (punchRecords || []).map(p => ({
+      id: p.id,
+      punch_time: p.punch_time,
+      punch_type: p.punch_type,
+      clock_in_time: p.clock_in_time,
+      clock_out_time: p.clock_out_time,
+      gps_latitude: p.gps_latitude,
+      gps_longitude: p.gps_longitude,
+      gps_address: p.gps_address,
+      gps_location_type: p.gps_location_type,
+      is_violation: p.is_violation,
+      violation_reason: p.violation_reason,
+      expected_location_type: p.expected_location_type,
+      can_be_excused: p.can_be_excused,
+      origin: p.origin,
+    }));
+
+    // Fetch excused office visit for this technician on this date
+    const { data: excusedVisit } = await supabase
+      .from('excused_office_visits')
+      .select('reason, notes')
+      .eq('technician_id', technicianId)
+      .eq('visit_date', date)
+      .single();
+
+    const excusedOfficeVisit = excusedVisit
+      ? { reason: excusedVisit.reason, notes: excusedVisit.notes || undefined }
+      : undefined;
+
     // Build tech config
     const techConfig: TechTimelineConfig = {
       takesTruckHome: technician.takes_truck_home || false,
@@ -176,6 +229,8 @@ export async function GET(req: NextRequest) {
       jobs: jobDetails,
       techConfig,
       customLocations,
+      punches,
+      excusedOfficeVisit,
     });
 
     return NextResponse.json({

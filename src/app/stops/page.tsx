@@ -23,6 +23,7 @@ import {
 import DayTimelineComponent from '@/components/DayTimeline';
 import SimpleMapModal from '@/components/SimpleMapModal';
 import LabelLocationModal from '@/components/LabelLocationModal';
+import ViolationsPanel, { Violation } from '@/components/ViolationsPanel';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 import { LocationCategory, BoundaryType } from '@/types/custom-location';
 
@@ -116,6 +117,9 @@ export default function StopDetailsPage() {
   const [labelModalOpen, setLabelModalOpen] = useState(false);
   const [labelLocation, setLabelLocation] = useState<LabelLocationData | null>(null);
 
+  // Violations state
+  const [violations, setViolations] = useState<Violation[]>([]);
+
   // Initialize dates on client side
   useEffect(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -149,6 +153,7 @@ export default function StopDetailsPage() {
     setLoading(true);
     setError(null);
     setTimelines([]);
+    setViolations([]);
     setExpandedCategory(null);
 
     try {
@@ -157,24 +162,31 @@ export default function StopDetailsPage() {
       const end = parseISO(endDate);
       const dates = eachDayOfInterval({ start, end });
 
-      // Fetch timeline for each date
-      const timelinePromises = dates.map(async (date) => {
-        const dateStr = format(date, 'yyyy-MM-dd');
-        const response = await fetch(
-          `/api/reports/technician-timeline?technicianId=${selectedTechId}&date=${dateStr}`
-        );
-        const data = await response.json();
+      // Fetch timeline for each date and violations in parallel
+      const [timelinesResults, violationsResponse] = await Promise.all([
+        Promise.all(dates.map(async (date) => {
+          const dateStr = format(date, 'yyyy-MM-dd');
+          const response = await fetch(
+            `/api/reports/technician-timeline?technicianId=${selectedTechId}&date=${dateStr}`
+          );
+          const data = await response.json();
 
-        if (data.success && data.timeline) {
-          return data.timeline as DayTimeline;
-        }
-        return null;
-      });
+          if (data.success && data.timeline) {
+            return data.timeline as DayTimeline;
+          }
+          return null;
+        })),
+        fetch(`/api/reports/punch-violations?startDate=${startDate}&endDate=${endDate}&technicianId=${selectedTechId}`)
+      ]);
 
-      const results = await Promise.all(timelinePromises);
-      const validTimelines = results.filter((t): t is DayTimeline => t !== null);
-
+      const validTimelines = timelinesResults.filter((t): t is DayTimeline => t !== null);
       setTimelines(validTimelines);
+
+      // Parse violations
+      const violationsData = await violationsResponse.json();
+      if (violationsData.success) {
+        setViolations(violationsData.violations || []);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to fetch timelines');
     } finally {
@@ -402,6 +414,58 @@ export default function StopDetailsPage() {
 
   const toggleCategory = (category: string) => {
     setExpandedCategory(expandedCategory === category ? null : category);
+  };
+
+  // Handle excusing a violation
+  const handleExcuseViolation = async (violation: Violation, reason: string, notes?: string) => {
+    const response = await fetch('/api/excused-visits', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        technicianId: violation.technicianId,
+        visitDate: violation.date,
+        reason,
+        notes,
+      }),
+    });
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to excuse violation');
+    }
+
+    // Update local state to show the excuse immediately
+    setViolations(prev => prev.map(v =>
+      v.id === violation.id
+        ? { ...v, isExcused: true, excusedReason: reason }
+        : v
+    ));
+
+    // Refresh timelines to update the badges
+    await fetchTimelines();
+  };
+
+  // Handle removing an excuse
+  const handleRemoveExcuse = async (violation: Violation) => {
+    const response = await fetch(
+      `/api/excused-visits?technicianId=${violation.technicianId}&visitDate=${violation.date}`,
+      { method: 'DELETE' }
+    );
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to remove excuse');
+    }
+
+    // Update local state
+    setViolations(prev => prev.map(v =>
+      v.id === violation.id
+        ? { ...v, isExcused: false, excusedReason: undefined }
+        : v
+    ));
+
+    // Refresh timelines to update the badges
+    await fetchTimelines();
   };
 
   const selectedTech = technicians.find(t => t.id === selectedTechId);
@@ -683,6 +747,15 @@ export default function StopDetailsPage() {
               ))}
             </div>
           </div>
+
+          {/* Violations Panel */}
+          {violations.length > 0 && (
+            <ViolationsPanel
+              violations={violations}
+              onExcuseViolation={handleExcuseViolation}
+              onRemoveExcuse={handleRemoveExcuse}
+            />
+          )}
 
           {/* Timeline List */}
           <div className="space-y-4">
