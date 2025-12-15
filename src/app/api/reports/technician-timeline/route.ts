@@ -7,6 +7,8 @@ import { TechTimelineConfig, DayTimeline } from '@/types/timeline';
 import { OFFICE_LOCATION } from '@/lib/geo-utils';
 import { parseISO, differenceInMinutes } from 'date-fns';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   const supabase = createServerClient();
   const searchParams = req.nextUrl.searchParams;
