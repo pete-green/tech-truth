@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Get technician info including truck assignment and home location
+    // Get technician info including home location and vehicle ID
     const { data: technician, error: techError } = await supabase
       .from('technicians')
       .select(`
@@ -35,13 +35,7 @@ export async function GET(req: NextRequest) {
         home_longitude,
         home_address,
         exclude_from_office_visits,
-        truck_assignments!inner(
-          truck:trucks(
-            id,
-            unit_number,
-            verizon_vehicle_number
-          )
-        )
+        verizon_vehicle_id
       `)
       .eq('id', technicianId)
       .single();
@@ -53,13 +47,10 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Get truck info
-    const truckAssignment = (technician as any).truck_assignments?.[0];
-    const truck = truckAssignment?.truck;
-
-    if (!truck?.verizon_vehicle_number) {
+    // Check if technician has GPS tracking
+    if (!technician.verizon_vehicle_id) {
       return NextResponse.json(
-        { error: 'No truck assigned or truck has no GPS tracking' },
+        { error: 'No GPS vehicle assigned to this technician' },
         { status: 400 }
       );
     }
@@ -141,7 +132,7 @@ export async function GET(req: NextRequest) {
     let segments: Awaited<ReturnType<typeof getVehicleSegments>>['Segments'] = [];
     try {
       const segmentsResponse = await getVehicleSegments(
-        truck.verizon_vehicle_number,
+        technician.verizon_vehicle_id,
         startDateUtc
       );
       segments = segmentsResponse?.Segments || [];
