@@ -6,12 +6,17 @@ import { MapContainer, TileLayer, Marker, Circle, MapRecenter } from './LeafletM
 import { LocationCategory, CATEGORY_INFO, CustomLocation } from '@/types/custom-location';
 import { LOCATION_PRESETS, CATEGORY_ICONS, getCategoryColors, LocationPreset } from '@/lib/location-logos';
 
+// Normalize name for deduplication (handles variations like "7-Eleven" vs "7 Eleven")
+function normalizeNameKey(name: string): string {
+  return name.toLowerCase().replace(/[-\s]+/g, '').trim();
+}
+
 // Extract unique location templates from saved locations
 function extractUniqueTemplates(locations: CustomLocation[]): LocationPreset[] {
   const seen = new Map<string, LocationPreset>();
 
   for (const loc of locations) {
-    const key = loc.name.toLowerCase();
+    const key = normalizeNameKey(loc.name);
     // Keep the one with the most complete data (has logo)
     if (!seen.has(key) || (loc.logoUrl && !seen.get(key)?.logoUrl)) {
       seen.set(key, {
@@ -105,15 +110,15 @@ export default function LabelLocationModal({
     }
   }, [isOpen]);
 
-  // Combine hardcoded presets with saved templates, dedupe by name
+  // Combine hardcoded presets with saved templates, dedupe by normalized name
   const allPresets = useMemo(() => {
     const combined = new Map<string, LocationPreset>();
 
     // Add hardcoded presets first
-    LOCATION_PRESETS.forEach(p => combined.set(p.name.toLowerCase(), p));
+    LOCATION_PRESETS.forEach(p => combined.set(normalizeNameKey(p.name), p));
 
     // Override/add saved templates (user data takes priority)
-    savedTemplates.forEach(p => combined.set(p.name.toLowerCase(), p));
+    savedTemplates.forEach(p => combined.set(normalizeNameKey(p.name), p));
 
     return Array.from(combined.values()).sort((a, b) =>
       a.name.localeCompare(b.name)
