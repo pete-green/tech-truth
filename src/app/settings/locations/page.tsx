@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft,
   MapPin,
   Search,
   Plus,
@@ -13,6 +12,7 @@ import {
   Edit2,
   Save,
   X,
+  ArrowLeft,
 } from 'lucide-react';
 import { MapContainer, TileLayer, Circle, MapRecenter, DraggableMarker } from '@/components/LeafletMapWrapper';
 import { CustomLocation, LocationCategory, CATEGORY_INFO } from '@/types/custom-location';
@@ -149,37 +149,31 @@ export default function LocationsPage() {
   const categories: LocationCategory[] = ['gas_station', 'supply_house', 'restaurant', 'parts_store', 'other'];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link
-                href="/settings"
-                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                Back to Settings
-              </Link>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">Custom Locations</h1>
-                <p className="text-sm text-gray-500">Manage labeled locations and geofences</p>
-              </div>
-            </div>
-            <button
-              onClick={fetchLocations}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/settings"
+            className="flex items-center gap-2 text-gray-500 hover:text-gray-700"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Custom Locations</h1>
+            <p className="text-gray-500 mt-1">Manage labeled locations and geofences</p>
           </div>
         </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <button
+          onClick={fetchLocations}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 flex items-center justify-between">
             <span>{error}</span>
@@ -501,7 +495,6 @@ export default function LocationsPage() {
             )}
           </div>
         </div>
-      </main>
-    </div>
+    </main>
   );
 }

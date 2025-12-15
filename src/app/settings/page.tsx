@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft,
   Truck,
   User,
   Save,
@@ -13,7 +12,6 @@ import {
   Search,
   X,
   Building,
-  Home,
   MapPin,
   Check,
   Pencil,
@@ -430,46 +428,31 @@ export default function SettingsPage() {
   const unassignedCount = technicians.filter((t) => !t.verizon_vehicle_id).length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                Back to Dashboard
-              </Link>
-              <div className="h-6 w-px bg-gray-300" />
-              <h1 className="text-xl font-bold text-gray-900">
-                Technician Truck Mapping
-              </h1>
-            </div>
-            <div className="flex items-center gap-3">
-              <Link
-                href="/settings/locations"
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                <MapPin className="w-4 h-4" />
-                Custom Locations
-              </Link>
-              <button
-                onClick={fetchData}
-                disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-            </div>
-          </div>
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Technician Truck Mapping</h1>
+          <p className="text-gray-500 mt-1">Assign GPS-tracked trucks to technicians</p>
         </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/settings/locations"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <MapPin className="w-4 h-4" />
+            Custom Locations
+          </Link>
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 border rounded-lg hover:bg-gray-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+      </div>
         {/* Alerts */}
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
@@ -896,7 +879,6 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
-      </main>
-    </div>
+    </main>
   );
 }
