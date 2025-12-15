@@ -17,7 +17,17 @@ import {
 import TechnicianFilter from '@/components/TechnicianFilter';
 import ExpandableTechnicianRow from '@/components/ExpandableTechnicianRow';
 import GpsLocationModal from '@/components/GpsLocationModal';
+import SimpleMapModal from '@/components/SimpleMapModal';
 import { TechnicianFilterItem, TechnicianDayDetails, JobDetail, GpsModalState } from '@/types/reports';
+
+interface SimpleMapModalState {
+  isOpen: boolean;
+  latitude: number;
+  longitude: number;
+  label: string;
+  address?: string;
+  technicianName: string;
+}
 
 interface TechnicianStats {
   id: string;
@@ -103,6 +113,9 @@ export default function ReportsPage() {
 
   // GPS Modal
   const [gpsModal, setGpsModal] = useState<GpsModalState | null>(null);
+
+  // Simple Map Modal (for unknown locations, office visits, etc.)
+  const [simpleMapModal, setSimpleMapModal] = useState<SimpleMapModalState | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -241,6 +254,20 @@ export default function ReportsPage() {
       data: null,
       loading: true,
       error: null,
+    });
+  };
+
+  const handleShowMapLocation = (
+    location: { latitude: number; longitude: number; label: string; address?: string },
+    technicianName: string
+  ) => {
+    setSimpleMapModal({
+      isOpen: true,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      label: location.label,
+      address: location.address,
+      technicianName,
     });
   };
 
@@ -631,6 +658,7 @@ export default function ReportsPage() {
                             dayDetails={technicianDetails.get(tech.id) || null}
                             loading={loadingDetails.has(tech.id)}
                             onShowGpsLocation={handleShowGpsLocation}
+                            onShowMapLocation={handleShowMapLocation}
                           />
                         ))}
                       </tbody>
@@ -679,6 +707,19 @@ export default function ReportsPage() {
           scheduledTime={gpsModal.scheduledTime}
           technicianId={gpsModal.technicianId}
           jobId={gpsModal.jobId}
+        />
+      )}
+
+      {/* Simple Map Modal (for unknown locations, etc.) */}
+      {simpleMapModal && (
+        <SimpleMapModal
+          isOpen={simpleMapModal.isOpen}
+          onClose={() => setSimpleMapModal(null)}
+          latitude={simpleMapModal.latitude}
+          longitude={simpleMapModal.longitude}
+          label={simpleMapModal.label}
+          address={simpleMapModal.address}
+          technicianName={simpleMapModal.technicianName}
         />
       )}
     </div>

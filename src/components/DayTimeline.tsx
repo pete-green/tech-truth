@@ -4,9 +4,17 @@ import { format, parseISO } from 'date-fns';
 import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle } from 'lucide-react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 
+interface MapLocation {
+  latitude: number;
+  longitude: number;
+  label: string;
+  address?: string;
+}
+
 interface DayTimelineProps {
   timeline: DayTimeline;
   onShowGpsLocation?: (jobId: string, jobNumber: string) => void;
+  onShowMapLocation?: (location: MapLocation) => void;
 }
 
 function formatDuration(minutes: number): string {
@@ -140,10 +148,12 @@ function TimelineEventCard({
   event,
   showTravelTime,
   onShowGpsLocation,
+  onShowMapLocation,
 }: {
   event: TimelineEvent;
   showTravelTime: boolean;
   onShowGpsLocation?: (jobId: string, jobNumber: string) => void;
+  onShowMapLocation?: (location: MapLocation) => void;
 }) {
   const styles = getEventStyles(event);
   const time = format(parseISO(event.timestamp), 'h:mm a');
@@ -233,10 +243,26 @@ function TimelineEventCard({
             </div>
           )}
 
-          {/* Map link for first jobs */}
-          {event.type === 'arrived_job' && event.isFirstJob && event.jobId && onShowGpsLocation && (
+          {/* Map link for all arrival events */}
+          {event.latitude && event.longitude && onShowMapLocation && (
+            event.type === 'arrived_job' ||
+            event.type === 'arrived_unknown' ||
+            event.type === 'arrived_office' ||
+            event.type === 'arrived_home'
+          ) && (
             <button
-              onClick={() => onShowGpsLocation(event.jobId!, event.jobNumber!)}
+              onClick={() => onShowMapLocation({
+                latitude: event.latitude!,
+                longitude: event.longitude!,
+                label: event.type === 'arrived_job'
+                  ? `Job #${event.jobNumber}`
+                  : event.type === 'arrived_unknown'
+                  ? 'Unknown Stop'
+                  : event.type === 'arrived_office'
+                  ? 'Office'
+                  : 'Home',
+                address: event.address,
+              })}
               className="mt-2 inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded transition-colors border border-blue-200"
             >
               <MapPin className="w-3 h-3" />
@@ -252,6 +278,7 @@ function TimelineEventCard({
 export default function DayTimelineComponent({
   timeline,
   onShowGpsLocation,
+  onShowMapLocation,
 }: DayTimelineProps) {
   const formattedDate = format(parseISO(timeline.date), 'MMMM d, yyyy');
 
@@ -334,6 +361,7 @@ export default function DayTimelineComponent({
             event={event}
             showTravelTime={index > 0}
             onShowGpsLocation={onShowGpsLocation}
+            onShowMapLocation={onShowMapLocation}
           />
         ))}
       </div>

@@ -20,6 +20,13 @@ interface TechnicianStats {
   hasInaccurateData: boolean;
 }
 
+interface MapLocation {
+  latitude: number;
+  longitude: number;
+  label: string;
+  address?: string;
+}
+
 interface ExpandableTechnicianRowProps {
   technician: TechnicianStats;
   expanded: boolean;
@@ -27,6 +34,7 @@ interface ExpandableTechnicianRowProps {
   dayDetails: TechnicianDayDetails | null;
   loading: boolean;
   onShowGpsLocation: (job: JobDetail, technicianName: string) => void;
+  onShowMapLocation?: (location: MapLocation, technicianName: string) => void;
 }
 
 export default function ExpandableTechnicianRow({
@@ -36,6 +44,7 @@ export default function ExpandableTechnicianRow({
   dayDetails,
   loading,
   onShowGpsLocation,
+  onShowMapLocation,
 }: ExpandableTechnicianRowProps) {
   // View mode: 'jobs' for old table view, 'timeline' for new timeline view
   // Default to 'jobs' to avoid multiple simultaneous API calls on expand
@@ -80,6 +89,13 @@ export default function ExpandableTechnicianRow({
       }
     }
   }, [dayDetails, onShowGpsLocation, technician.name]);
+
+  // Handle map location click from timeline (for any location)
+  const handleMapLocationClick = useCallback((location: MapLocation) => {
+    if (onShowMapLocation) {
+      onShowMapLocation(location, technician.name);
+    }
+  }, [onShowMapLocation, technician.name]);
 
   return (
     <>
@@ -230,6 +246,7 @@ export default function ExpandableTechnicianRow({
                           key={day.date}
                           timeline={timeline}
                           onShowGpsLocation={handleTimelineGpsClick}
+                          onShowMapLocation={handleMapLocationClick}
                         />
                       );
                     }
