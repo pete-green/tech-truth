@@ -50,8 +50,8 @@ export interface LocationPreset {
 
 export const LOCATION_PRESETS: LocationPreset[] = [
   // Gas Stations
-  { name: 'Sheetz', category: 'gas_station', logoUrl: 'https://logo.clearbit.com/sheetz.com' },
-  { name: 'BP', category: 'gas_station', logoUrl: 'https://logo.clearbit.com/bp.com' },
+  { name: 'Sheetz', category: 'gas_station', logoUrl: 'https://mma.prnewswire.com/media/75030/sheetz__inc__logo.jpg?p=facebook' },
+  { name: 'BP', category: 'gas_station', logoUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRv5eiZ1pSLj7soXrEUcn-kQMsW2QTUqkLAtw&s' },
   { name: 'Shell', category: 'gas_station', logoUrl: 'https://logo.clearbit.com/shell.com' },
   { name: 'Exxon', category: 'gas_station', logoUrl: 'https://logo.clearbit.com/exxonmobil.com' },
   { name: 'Speedway', category: 'gas_station', logoUrl: 'https://logo.clearbit.com/speedway.com' },
