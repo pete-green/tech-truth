@@ -6,7 +6,9 @@ export type TimelineEventType =
   | 'left_office'
   | 'arrived_office'
   | 'arrived_job'
-  | 'left_job';
+  | 'left_job'
+  | 'arrived_unknown'
+  | 'left_unknown';
 
 export interface TimelineEvent {
   id: string;
@@ -26,7 +28,9 @@ export interface TimelineEvent {
 
   // Derived info
   durationMinutes?: number;    // Time spent at this location (for arrivals)
-  travelMinutes?: number;      // Time to get here from previous location
+  travelMinutes?: number;      // Actual GPS segment travel time
+  elapsedMinutes?: number;     // Time since previous visible event (may include untracked time)
+  hasUntrackedTime?: boolean;  // True if there's unaccounted time between events
   isLate?: boolean;            // For first job arrival
   varianceMinutes?: number;    // How early/late (positive = late)
   isUnnecessary?: boolean;     // For office visits before first job

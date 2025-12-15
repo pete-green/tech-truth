@@ -136,6 +136,9 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
   let firstJobOnTime: boolean | null = null;
   let firstJobVariance: number | null = null;
 
+  // Track the last visible event departure time (for elapsed time calculation)
+  let lastVisibleDepartureTime: Date | null = null;
+
   // Find first job for late detection
   const firstJob = jobs.find(j => j.isFirstJob) || jobs[0];
   const firstJobScheduledTime = firstJob?.scheduledStart ? parseISO(firstJob.scheduledStart) : null;
@@ -315,8 +318,34 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           customerName: matchedJob.customerName || undefined,
         });
       }
+    } else if (endLocationType === 'unknown') {
+      // Show unknown stops - these could be lunch, supply house, personal errands, etc.
+      // Only show if they stayed for more than 2 minutes (filter out traffic lights, etc.)
+      if (durationMinutes !== undefined && durationMinutes >= 2) {
+        events.push({
+          id: `event-${eventId++}`,
+          type: 'arrived_unknown',
+          timestamp: arrivalTime.toISOString(),
+          address: formatSegmentAddress(segment.EndLocation),
+          latitude: segment.EndLocation.Latitude,
+          longitude: segment.EndLocation.Longitude,
+          travelMinutes,
+          durationMinutes,
+        });
+
+        // Add departure event
+        if (previousDepartureTime) {
+          events.push({
+            id: `event-${eventId++}`,
+            type: 'left_unknown',
+            timestamp: previousDepartureTime.toISOString(),
+            address: formatSegmentAddress(segment.EndLocation),
+            latitude: segment.EndLocation.Latitude,
+            longitude: segment.EndLocation.Longitude,
+          });
+        }
+      }
     }
-    // Unknown locations are skipped (transient stops like gas stations)
   }
 
   return {

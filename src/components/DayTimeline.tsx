@@ -1,7 +1,7 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation } from 'lucide-react';
+import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle } from 'lucide-react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 
 interface DayTimelineProps {
@@ -30,6 +30,9 @@ function EventIcon({ type, isUnnecessary }: { type: TimelineEvent['type']; isUnn
       return <MapPin className="w-4 h-4" />;
     case 'left_job':
       return <Car className="w-4 h-4" />;
+    case 'arrived_unknown':
+    case 'left_unknown':
+      return <HelpCircle className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
@@ -49,6 +52,10 @@ function getEventLabel(event: TimelineEvent): string {
       return `Arrived at Job #${event.jobNumber}`;
     case 'left_job':
       return `Left Job #${event.jobNumber}`;
+    case 'arrived_unknown':
+      return 'Stopped at Unknown Location';
+    case 'left_unknown':
+      return 'Left Unknown Location';
     default:
       return 'Unknown Event';
   }
@@ -110,6 +117,14 @@ function getEventStyles(event: TimelineEvent): {
         border: 'border-gray-200',
         iconBg: 'bg-gray-500',
         text: 'text-gray-700',
+      };
+    case 'arrived_unknown':
+    case 'left_unknown':
+      return {
+        bg: 'bg-yellow-50',
+        border: 'border-yellow-300',
+        iconBg: 'bg-yellow-500',
+        text: 'text-yellow-900',
       };
     default:
       return {
