@@ -11,6 +11,7 @@ import {
   parseVerizonUtcTimestamp,
   OFFICE_LOCATION,
   HOME_RADIUS_FEET,
+  isPointInPolygon,
 } from './geo-utils';
 import { format, parseISO } from 'date-fns';
 
@@ -67,7 +68,8 @@ function isNearHome(
 
 /**
  * Find a matching custom location for a given coordinate
- * Returns the custom location if within its geofence radius, null otherwise
+ * Returns the custom location if within its geofence boundary, null otherwise
+ * Supports both circle (radius-based) and polygon boundaries
  */
 function findMatchingCustomLocation(
   lat: number,
@@ -77,9 +79,18 @@ function findMatchingCustomLocation(
   if (!customLocations || customLocations.length === 0) return null;
 
   for (const loc of customLocations) {
-    const distance = calculateDistanceFeet(lat, lon, loc.centerLatitude, loc.centerLongitude);
-    if (distance <= loc.radiusFeet) {
-      return loc;
+    // Check based on boundary type
+    if (loc.boundaryType === 'polygon' && loc.boundaryPolygon && loc.boundaryPolygon.length >= 3) {
+      // Use polygon detection
+      if (isPointInPolygon(lat, lon, loc.boundaryPolygon)) {
+        return loc;
+      }
+    } else {
+      // Use circle detection (default)
+      const distance = calculateDistanceFeet(lat, lon, loc.centerLatitude, loc.centerLongitude);
+      if (distance <= loc.radiusFeet) {
+        return loc;
+      }
     }
   }
   return null;

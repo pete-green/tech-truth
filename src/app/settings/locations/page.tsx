@@ -13,9 +13,12 @@ import {
   Save,
   X,
   ArrowLeft,
+  Circle as CircleIcon,
+  Pentagon,
+  Undo2,
 } from 'lucide-react';
-import { MapContainer, TileLayer, Circle, MapRecenter, DraggableMarker } from '@/components/LeafletMapWrapper';
-import { CustomLocation, LocationCategory, CATEGORY_INFO } from '@/types/custom-location';
+import { MapContainer, TileLayer, Circle, MapRecenter, DraggableMarker, Polygon, PolygonDrawer } from '@/components/LeafletMapWrapper';
+import { CustomLocation, LocationCategory, CATEGORY_INFO, BoundaryType } from '@/types/custom-location';
 import { CATEGORY_ICONS, getCategoryColors } from '@/lib/location-logos';
 
 interface EditingLocation extends CustomLocation {
@@ -32,6 +35,7 @@ export default function LocationsPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [isDrawingPolygon, setIsDrawingPolygon] = useState(false);
 
   // Delay map rendering to avoid SSR issues
   useEffect(() => {
@@ -69,14 +73,23 @@ export default function LocationsPage() {
 
   const handleEdit = (location: CustomLocation) => {
     setEditingLocation({ ...location, isDirty: false });
+    setIsDrawingPolygon(location.boundaryType === 'polygon');
   };
 
   const handleCancelEdit = () => {
     setEditingLocation(null);
+    setIsDrawingPolygon(false);
   };
 
   const handleSave = async () => {
     if (!editingLocation) return;
+
+    // Validate polygon if using polygon boundary
+    if (editingLocation.boundaryType === 'polygon' &&
+        (!editingLocation.boundaryPolygon || editingLocation.boundaryPolygon.length < 3)) {
+      setError('Polygon boundary requires at least 3 points');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -90,6 +103,8 @@ export default function LocationsPage() {
           centerLatitude: editingLocation.centerLatitude,
           centerLongitude: editingLocation.centerLongitude,
           radiusFeet: editingLocation.radiusFeet,
+          boundaryType: editingLocation.boundaryType,
+          boundaryPolygon: editingLocation.boundaryPolygon,
           address: editingLocation.address,
         }),
       });
@@ -102,6 +117,7 @@ export default function LocationsPage() {
       // Refresh the list
       await fetchLocations();
       setEditingLocation(null);
+      setIsDrawingPolygon(false);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -276,8 +292,18 @@ export default function LocationsPage() {
                                 {location.address}
                               </p>
                             )}
-                            <p className="text-xs text-gray-400 mt-1">
-                              Radius: {location.radiusFeet} ft
+                            <p className="text-xs text-gray-400 mt-1 flex items-center gap-2">
+                              {location.boundaryType === 'polygon' ? (
+                                <>
+                                  <Pentagon className="w-3 h-3" />
+                                  Custom shape ({location.boundaryPolygon?.length || 0} points)
+                                </>
+                              ) : (
+                                <>
+                                  <CircleIcon className="w-3 h-3" />
+                                  {location.radiusFeet} ft radius
+                                </>
+                              )}
                             </p>
                           </div>
                         </div>
@@ -347,23 +373,39 @@ export default function LocationsPage() {
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
-                      <DraggableMarker
-                        position={[editingLocation.centerLatitude, editingLocation.centerLongitude]}
-                        onPositionChange={(lat, lng) => {
-                          setEditingLocation((prev) =>
-                            prev ? { ...prev, centerLatitude: lat, centerLongitude: lng, isDirty: true } : null
-                          );
-                        }}
-                      />
-                      <Circle
-                        center={[editingLocation.centerLatitude, editingLocation.centerLongitude]}
-                        radius={editingLocation.radiusFeet * 0.3048}
-                        pathOptions={{
-                          color: '#3b82f6',
-                          fillColor: '#3b82f6',
-                          fillOpacity: 0.2,
-                        }}
-                      />
+                      {/* Center marker (only for circle mode) */}
+                      {editingLocation.boundaryType !== 'polygon' && (
+                        <DraggableMarker
+                          position={[editingLocation.centerLatitude, editingLocation.centerLongitude]}
+                          onPositionChange={(lat, lng) => {
+                            setEditingLocation((prev) =>
+                              prev ? { ...prev, centerLatitude: lat, centerLongitude: lng, isDirty: true } : null
+                            );
+                          }}
+                        />
+                      )}
+                      {/* Show circle or polygon based on boundary type */}
+                      {editingLocation.boundaryType === 'polygon' ? (
+                        <PolygonDrawer
+                          points={editingLocation.boundaryPolygon || []}
+                          onPointsChange={(points) => {
+                            setEditingLocation((prev) =>
+                              prev ? { ...prev, boundaryPolygon: points, isDirty: true } : null
+                            );
+                          }}
+                          isDrawing={isDrawingPolygon}
+                        />
+                      ) : (
+                        <Circle
+                          center={[editingLocation.centerLatitude, editingLocation.centerLongitude]}
+                          radius={editingLocation.radiusFeet * 0.3048}
+                          pathOptions={{
+                            color: '#3b82f6',
+                            fillColor: '#3b82f6',
+                            fillOpacity: 0.2,
+                          }}
+                        />
+                      )}
                     </MapContainer>
                   ) : (
                     <div className="h-full flex items-center justify-center bg-gray-100">
@@ -371,7 +413,9 @@ export default function LocationsPage() {
                     </div>
                   )}
                   <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg text-xs text-gray-600 shadow">
-                    Drag the marker to adjust location
+                    {editingLocation.boundaryType === 'polygon'
+                      ? 'Click map to add points, drag to adjust'
+                      : 'Drag the marker to adjust location'}
                   </div>
                 </div>
 
@@ -383,25 +427,106 @@ export default function LocationsPage() {
                     <span>Lng: {editingLocation.centerLongitude.toFixed(6)}</span>
                   </div>
 
-                  {/* Radius Slider */}
+                  {/* Boundary Type Toggle */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Geofence Radius: {editingLocation.radiusFeet} ft
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Boundary Type
                     </label>
-                    <input
-                      type="range"
-                      min="50"
-                      max="1500"
-                      step="25"
-                      value={editingLocation.radiusFeet}
-                      onChange={(e) => updateEditingField('radiusFeet', Number(e.target.value))}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="flex justify-between text-xs text-gray-500 mt-1">
-                      <span>50 ft</span>
-                      <span>1500 ft</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          updateEditingField('boundaryType', 'circle');
+                          setIsDrawingPolygon(false);
+                        }}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                          editingLocation.boundaryType !== 'polygon'
+                            ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500 ring-offset-1'
+                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        <CircleIcon className="w-4 h-4" />
+                        Circle
+                      </button>
+                      <button
+                        onClick={() => {
+                          updateEditingField('boundaryType', 'polygon');
+                          setIsDrawingPolygon(true);
+                        }}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                          editingLocation.boundaryType === 'polygon'
+                            ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500 ring-offset-1'
+                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Pentagon className="w-4 h-4" />
+                        Custom Shape
+                      </button>
                     </div>
                   </div>
+
+                  {/* Radius Slider (only for circle mode) */}
+                  {editingLocation.boundaryType !== 'polygon' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Geofence Radius: {editingLocation.radiusFeet} ft
+                      </label>
+                      <input
+                        type="range"
+                        min="50"
+                        max="1500"
+                        step="25"
+                        value={editingLocation.radiusFeet}
+                        onChange={(e) => updateEditingField('radiusFeet', Number(e.target.value))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>50 ft</span>
+                        <span>1500 ft</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Polygon Controls (only for polygon mode) */}
+                  {editingLocation.boundaryType === 'polygon' && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm text-blue-800">
+                          <span className="font-medium">Click on map to add points</span>
+                          <span className="text-blue-600 ml-2">({editingLocation.boundaryPolygon?.length || 0} points)</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              if (editingLocation.boundaryPolygon && editingLocation.boundaryPolygon.length > 0) {
+                                updateEditingField('boundaryPolygon', editingLocation.boundaryPolygon.slice(0, -1));
+                              }
+                            }}
+                            disabled={!editingLocation.boundaryPolygon?.length}
+                            className="flex items-center gap-1 px-2 py-1 text-xs bg-white border border-blue-300 rounded hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Undo2 className="w-3 h-3" />
+                            Undo
+                          </button>
+                          <button
+                            onClick={() => updateEditingField('boundaryPolygon', [])}
+                            disabled={!editingLocation.boundaryPolygon?.length}
+                            className="flex items-center gap-1 px-2 py-1 text-xs bg-white border border-blue-300 rounded hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-blue-600">
+                        Drag points to adjust. Click a point to delete it (min 3 points).
+                      </p>
+                      {(editingLocation.boundaryPolygon?.length || 0) > 0 && (editingLocation.boundaryPolygon?.length || 0) < 3 && (
+                        <p className="text-xs text-orange-600 mt-1">
+                          Add {3 - (editingLocation.boundaryPolygon?.length || 0)} more point{3 - (editingLocation.boundaryPolygon?.length || 0) > 1 ? 's' : ''} to complete the shape.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Name */}
                   <div>

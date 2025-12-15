@@ -24,7 +24,7 @@ import DayTimelineComponent from '@/components/DayTimeline';
 import SimpleMapModal from '@/components/SimpleMapModal';
 import LabelLocationModal from '@/components/LabelLocationModal';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
-import { LocationCategory } from '@/types/custom-location';
+import { LocationCategory, BoundaryType } from '@/types/custom-location';
 
 interface Technician {
   id: string;
@@ -370,6 +370,8 @@ export default function StopDetailsPage() {
     category: LocationCategory;
     logoUrl?: string;
     radiusFeet: number;
+    boundaryType: BoundaryType;
+    boundaryPolygon?: [number, number][];
   }) => {
     if (!labelLocation) return;
 
@@ -380,9 +382,11 @@ export default function StopDetailsPage() {
         name: data.name,
         category: data.category,
         logoUrl: data.logoUrl,
-        latitude: labelLocation.latitude,
-        longitude: labelLocation.longitude,
+        centerLatitude: labelLocation.latitude,
+        centerLongitude: labelLocation.longitude,
         radiusFeet: data.radiusFeet,
+        boundaryType: data.boundaryType,
+        boundaryPolygon: data.boundaryPolygon,
         address: labelLocation.address,
       }),
     });

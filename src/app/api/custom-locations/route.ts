@@ -50,6 +50,8 @@ export async function POST(request: NextRequest) {
       centerLatitude,
       centerLongitude,
       radiusFeet = 300,
+      boundaryType = 'circle',
+      boundaryPolygon,
       address,
     } = body;
 
@@ -70,6 +72,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate boundary type
+    const validBoundaryTypes = ['circle', 'polygon'];
+    if (!validBoundaryTypes.includes(boundaryType)) {
+      return NextResponse.json(
+        { error: `Invalid boundary type. Must be one of: ${validBoundaryTypes.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    // Validate polygon if boundary type is polygon
+    if (boundaryType === 'polygon') {
+      if (!boundaryPolygon || !Array.isArray(boundaryPolygon) || boundaryPolygon.length < 3) {
+        return NextResponse.json(
+          { error: 'Polygon boundary requires at least 3 coordinate points' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Insert the new location
     const { data, error } = await supabase
       .from('custom_locations')
@@ -80,6 +101,8 @@ export async function POST(request: NextRequest) {
         center_latitude: centerLatitude,
         center_longitude: centerLongitude,
         radius_feet: radiusFeet,
+        boundary_type: boundaryType,
+        boundary_polygon: boundaryPolygon || null,
         address: address || null,
       })
       .select()

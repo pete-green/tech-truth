@@ -66,6 +66,8 @@ export async function PUT(
       centerLatitude,
       centerLongitude,
       radiusFeet,
+      boundaryType,
+      boundaryPolygon,
       address,
     } = body;
 
@@ -78,6 +80,25 @@ export async function PUT(
       );
     }
 
+    // Validate boundary type if provided
+    const validBoundaryTypes = ['circle', 'polygon'];
+    if (boundaryType && !validBoundaryTypes.includes(boundaryType)) {
+      return NextResponse.json(
+        { error: `Invalid boundary type. Must be one of: ${validBoundaryTypes.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    // Validate polygon if boundary type is polygon
+    if (boundaryType === 'polygon' && boundaryPolygon !== undefined) {
+      if (!Array.isArray(boundaryPolygon) || boundaryPolygon.length < 3) {
+        return NextResponse.json(
+          { error: 'Polygon boundary requires at least 3 coordinate points' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Build update object (only include provided fields)
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
@@ -86,6 +107,8 @@ export async function PUT(
     if (centerLatitude !== undefined) updateData.center_latitude = centerLatitude;
     if (centerLongitude !== undefined) updateData.center_longitude = centerLongitude;
     if (radiusFeet !== undefined) updateData.radius_feet = radiusFeet;
+    if (boundaryType !== undefined) updateData.boundary_type = boundaryType;
+    if (boundaryPolygon !== undefined) updateData.boundary_polygon = boundaryPolygon;
     if (address !== undefined) updateData.address = address;
 
     if (Object.keys(updateData).length === 0) {

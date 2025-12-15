@@ -29,6 +29,16 @@ export const Circle = dynamic(
   { ssr: false }
 );
 
+export const Polygon = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Polygon),
+  { ssr: false }
+);
+
+export const Polyline = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Polyline),
+  { ssr: false }
+);
+
 // useMap hook needs to be wrapped in a component for dynamic import
 // We'll create a map recenter component instead
 export const MapRecenter = dynamic(
@@ -39,6 +49,12 @@ export const MapRecenter = dynamic(
 // Draggable marker component
 export const DraggableMarker = dynamic(
   () => import('./DraggableMarker'),
+  { ssr: false }
+);
+
+// Polygon drawing component
+export const PolygonDrawer = dynamic(
+  () => import('./PolygonDrawer'),
   { ssr: false }
 );
 

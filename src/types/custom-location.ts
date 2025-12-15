@@ -7,6 +7,8 @@ export type LocationCategory =
   | 'parts_store'
   | 'other';
 
+export type BoundaryType = 'circle' | 'polygon';
+
 export interface CustomLocation {
   id: string;
   name: string;
@@ -15,6 +17,8 @@ export interface CustomLocation {
   centerLatitude: number;
   centerLongitude: number;
   radiusFeet: number;
+  boundaryType: BoundaryType;
+  boundaryPolygon?: [number, number][]; // Array of [lat, lng] pairs
   address?: string;
   createdAt?: string;
   createdBy?: string;
@@ -29,6 +33,8 @@ export interface CustomLocationRow {
   center_latitude: number;
   center_longitude: number;
   radius_feet: number;
+  boundary_type: string | null;
+  boundary_polygon: [number, number][] | null;
   address: string | null;
   created_at: string;
   created_by: string | null;
@@ -44,6 +50,8 @@ export function rowToCustomLocation(row: CustomLocationRow): CustomLocation {
     centerLatitude: row.center_latitude,
     centerLongitude: row.center_longitude,
     radiusFeet: row.radius_feet,
+    boundaryType: (row.boundary_type as BoundaryType) || 'circle',
+    boundaryPolygon: row.boundary_polygon || undefined,
     address: row.address || undefined,
     createdAt: row.created_at,
     createdBy: row.created_by || undefined,

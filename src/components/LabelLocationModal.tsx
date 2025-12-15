@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { X, MapPin, Tag, Save, Loader2 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Circle, MapRecenter } from './LeafletMapWrapper';
-import { LocationCategory, CATEGORY_INFO, CustomLocation } from '@/types/custom-location';
+import { X, MapPin, Tag, Save, Loader2, Circle as CircleIcon, Pentagon, Undo2, Trash2 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Circle, MapRecenter, Polygon, PolygonDrawer } from './LeafletMapWrapper';
+import { LocationCategory, CATEGORY_INFO, CustomLocation, BoundaryType } from '@/types/custom-location';
 import { LOCATION_PRESETS, CATEGORY_ICONS, getCategoryColors, LocationPreset } from '@/lib/location-logos';
 
 // Normalize name for deduplication (handles variations like "7-Eleven" vs "7 Eleven")
@@ -41,6 +41,8 @@ interface LabelLocationModalProps {
     category: LocationCategory;
     logoUrl?: string;
     radiusFeet: number;
+    boundaryType: BoundaryType;
+    boundaryPolygon?: [number, number][];
   }) => Promise<void>;
 }
 
@@ -56,6 +58,9 @@ export default function LabelLocationModal({
   const [category, setCategory] = useState<LocationCategory>('other');
   const [logoUrl, setLogoUrl] = useState('');
   const [radiusFeet, setRadiusFeet] = useState(300);
+  const [boundaryType, setBoundaryType] = useState<BoundaryType>('circle');
+  const [polygonPoints, setPolygonPoints] = useState<[number, number][]>([]);
+  const [isDrawing, setIsDrawing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [mapReady, setMapReady] = useState(false);
@@ -91,6 +96,9 @@ export default function LabelLocationModal({
       setCategory('other');
       setLogoUrl('');
       setRadiusFeet(300);
+      setBoundaryType('circle');
+      setPolygonPoints([]);
+      setIsDrawing(false);
       setError('');
     }
   }, [isOpen]);
@@ -179,6 +187,12 @@ export default function LabelLocationModal({
       return;
     }
 
+    // Validate polygon if using polygon boundary
+    if (boundaryType === 'polygon' && polygonPoints.length < 3) {
+      setError('Please draw at least 3 points to create a polygon boundary');
+      return;
+    }
+
     setSaving(true);
     setError('');
 
@@ -188,6 +202,8 @@ export default function LabelLocationModal({
         category,
         logoUrl: logoUrl || undefined,
         radiusFeet,
+        boundaryType,
+        boundaryPolygon: boundaryType === 'polygon' ? polygonPoints : undefined,
       });
       onClose();
     } catch (err: any) {
@@ -195,6 +211,16 @@ export default function LabelLocationModal({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleUndoPoint = () => {
+    if (polygonPoints.length > 0) {
+      setPolygonPoints(polygonPoints.slice(0, -1));
+    }
+  };
+
+  const handleClearPoints = () => {
+    setPolygonPoints([]);
   };
 
   if (!isOpen) return null;
@@ -227,7 +253,7 @@ export default function LabelLocationModal({
           </div>
 
           {/* Map */}
-          <div className="h-48 rounded-lg overflow-hidden border border-gray-200">
+          <div className={`rounded-lg overflow-hidden border border-gray-200 ${boundaryType === 'polygon' ? 'h-64' : 'h-48'}`}>
             {mapReady && icon ? (
               <MapContainer
                 center={[latitude, longitude]}
@@ -239,16 +265,26 @@ export default function LabelLocationModal({
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
+                {/* Center marker */}
                 <Marker position={[latitude, longitude]} icon={icon} />
-                <Circle
-                  center={[latitude, longitude]}
-                  radius={radiusMeters}
-                  pathOptions={{
-                    color: '#3b82f6',
-                    fillColor: '#3b82f6',
-                    fillOpacity: 0.2,
-                  }}
-                />
+                {/* Show circle or polygon based on boundary type */}
+                {boundaryType === 'circle' ? (
+                  <Circle
+                    center={[latitude, longitude]}
+                    radius={radiusMeters}
+                    pathOptions={{
+                      color: '#3b82f6',
+                      fillColor: '#3b82f6',
+                      fillOpacity: 0.2,
+                    }}
+                  />
+                ) : (
+                  <PolygonDrawer
+                    points={polygonPoints}
+                    onPointsChange={setPolygonPoints}
+                    isDrawing={isDrawing}
+                  />
+                )}
               </MapContainer>
             ) : (
               <div className="h-full flex items-center justify-center bg-gray-100">
@@ -257,25 +293,102 @@ export default function LabelLocationModal({
             )}
           </div>
 
-          {/* Radius Slider */}
+          {/* Boundary Type Toggle */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Geofence Radius: {radiusFeet} ft
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Boundary Type
             </label>
-            <input
-              type="range"
-              min="100"
-              max="1000"
-              step="50"
-              value={radiusFeet}
-              onChange={(e) => setRadiusFeet(Number(e.target.value))}
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-            />
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
-              <span>100 ft</span>
-              <span>1000 ft</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setBoundaryType('circle');
+                  setIsDrawing(false);
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                  boundaryType === 'circle'
+                    ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500 ring-offset-1'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <CircleIcon className="w-4 h-4" />
+                Circle
+              </button>
+              <button
+                onClick={() => {
+                  setBoundaryType('polygon');
+                  setIsDrawing(true);
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                  boundaryType === 'polygon'
+                    ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500 ring-offset-1'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <Pentagon className="w-4 h-4" />
+                Custom Shape
+              </button>
             </div>
           </div>
+
+          {/* Circle Radius Slider (only for circle mode) */}
+          {boundaryType === 'circle' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Geofence Radius: {radiusFeet} ft
+              </label>
+              <input
+                type="range"
+                min="100"
+                max="1000"
+                step="50"
+                value={radiusFeet}
+                onChange={(e) => setRadiusFeet(Number(e.target.value))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>100 ft</span>
+                <span>1000 ft</span>
+              </div>
+            </div>
+          )}
+
+          {/* Polygon Controls (only for polygon mode) */}
+          {boundaryType === 'polygon' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm text-blue-800">
+                  <span className="font-medium">Click on map to add points</span>
+                  <span className="text-blue-600 ml-2">({polygonPoints.length} points)</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleUndoPoint}
+                    disabled={polygonPoints.length === 0}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-white border border-blue-300 rounded hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Undo2 className="w-3 h-3" />
+                    Undo
+                  </button>
+                  <button
+                    onClick={handleClearPoints}
+                    disabled={polygonPoints.length === 0}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-white border border-blue-300 rounded hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-blue-600">
+                Drag points to adjust. Click a point to delete it (min 3 points).
+              </p>
+              {polygonPoints.length > 0 && polygonPoints.length < 3 && (
+                <p className="text-xs text-orange-600 mt-1">
+                  Add {3 - polygonPoints.length} more point{3 - polygonPoints.length > 1 ? 's' : ''} to complete the shape.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Location Name */}
           <div>
