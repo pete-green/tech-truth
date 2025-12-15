@@ -1,10 +1,29 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { X, MapPin, Tag, Save, Loader2 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Circle, MapRecenter } from './LeafletMapWrapper';
-import { LocationCategory, CATEGORY_INFO } from '@/types/custom-location';
-import { LOCATION_PRESETS, CATEGORY_ICONS, getCategoryColors } from '@/lib/location-logos';
+import { LocationCategory, CATEGORY_INFO, CustomLocation } from '@/types/custom-location';
+import { LOCATION_PRESETS, CATEGORY_ICONS, getCategoryColors, LocationPreset } from '@/lib/location-logos';
+
+// Extract unique location templates from saved locations
+function extractUniqueTemplates(locations: CustomLocation[]): LocationPreset[] {
+  const seen = new Map<string, LocationPreset>();
+
+  for (const loc of locations) {
+    const key = loc.name.toLowerCase();
+    // Keep the one with the most complete data (has logo)
+    if (!seen.has(key) || (loc.logoUrl && !seen.get(key)?.logoUrl)) {
+      seen.set(key, {
+        name: loc.name,
+        category: (loc.category as LocationCategory) || 'other',
+        logoUrl: loc.logoUrl,
+      });
+    }
+  }
+
+  return Array.from(seen.values());
+}
 
 interface LabelLocationModalProps {
   isOpen: boolean;
@@ -37,6 +56,9 @@ export default function LabelLocationModal({
   const [mapReady, setMapReady] = useState(false);
   const [icon, setIcon] = useState<any>(null);
   const [showPresets, setShowPresets] = useState(false);
+  const [savedTemplates, setSavedTemplates] = useState<LocationPreset[]>([]);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Load Leaflet icon on client side only
   useEffect(() => {
@@ -67,6 +89,72 @@ export default function LabelLocationModal({
       setError('');
     }
   }, [isOpen]);
+
+  // Fetch saved locations as templates when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/custom-locations')
+        .then(res => res.json())
+        .then(data => {
+          if (data.locations) {
+            const templates = extractUniqueTemplates(data.locations);
+            setSavedTemplates(templates);
+          }
+        })
+        .catch(err => console.error('Failed to fetch saved locations:', err));
+    }
+  }, [isOpen]);
+
+  // Combine hardcoded presets with saved templates, dedupe by name
+  const allPresets = useMemo(() => {
+    const combined = new Map<string, LocationPreset>();
+
+    // Add hardcoded presets first
+    LOCATION_PRESETS.forEach(p => combined.set(p.name.toLowerCase(), p));
+
+    // Override/add saved templates (user data takes priority)
+    savedTemplates.forEach(p => combined.set(p.name.toLowerCase(), p));
+
+    return Array.from(combined.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [savedTemplates]);
+
+  // Filter presets based on what user has typed
+  const filteredPresets = useMemo(() => {
+    if (!name.trim()) return allPresets;
+
+    const search = name.toLowerCase().trim();
+    return allPresets.filter(p =>
+      p.name.toLowerCase().includes(search)
+    );
+  }, [name, allPresets]);
+
+  // Auto-close dropdown when no matches and user has typed something
+  useEffect(() => {
+    if (showPresets && filteredPresets.length === 0 && name.trim()) {
+      setShowPresets(false);
+    }
+  }, [filteredPresets, showPresets, name]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node) &&
+        inputRef.current &&
+        !inputRef.current.contains(e.target as Node)
+      ) {
+        setShowPresets(false);
+      }
+    };
+
+    if (showPresets) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showPresets]);
 
   // Convert radius from feet to meters for Leaflet
   const radiusMeters = radiusFeet * 0.3048;
@@ -191,17 +279,26 @@ export default function LabelLocationModal({
             </label>
             <div className="relative">
               <input
+                ref={inputRef}
                 type="text"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (!showPresets) setShowPresets(true);
+                }}
                 onFocus={() => setShowPresets(true)}
                 placeholder="e.g., Sheetz, Ferguson Supply"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
-              {showPresets && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  <div className="p-2 text-xs text-gray-500 border-b">Quick Select</div>
-                  {LOCATION_PRESETS.map((preset) => (
+              {showPresets && filteredPresets.length > 0 && (
+                <div
+                  ref={dropdownRef}
+                  className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+                >
+                  <div className="p-2 text-xs text-gray-500 border-b">
+                    {name.trim() ? `Matching "${name}" (${filteredPresets.length})` : `Quick Select (${allPresets.length})`}
+                  </div>
+                  {filteredPresets.map((preset) => (
                     <button
                       key={preset.name}
                       onClick={() => handlePresetSelect(preset)}
@@ -227,12 +324,6 @@ export default function LabelLocationModal({
                       </span>
                     </button>
                   ))}
-                  <button
-                    onClick={() => setShowPresets(false)}
-                    className="w-full px-3 py-2 text-center text-sm text-gray-500 hover:bg-gray-50 border-t"
-                  >
-                    Close
-                  </button>
                 </div>
               )}
             </div>
