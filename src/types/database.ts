@@ -85,6 +85,45 @@ export type Database = {
           },
         ]
       }
+      custom_locations: {
+        Row: {
+          address: string | null
+          category: string | null
+          center_latitude: number
+          center_longitude: number
+          created_at: string | null
+          created_by: string | null
+          id: string
+          logo_url: string | null
+          name: string
+          radius_feet: number | null
+        }
+        Insert: {
+          address?: string | null
+          category?: string | null
+          center_latitude: number
+          center_longitude: number
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          logo_url?: string | null
+          name: string
+          radius_feet?: number | null
+        }
+        Update: {
+          address?: string | null
+          category?: string | null
+          center_latitude?: number
+          center_longitude?: number
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          radius_feet?: number | null
+        }
+        Relationships: []
+      }
       gps_events: {
         Row: {
           address: string | null
@@ -564,3 +603,4 @@ export type ArrivalDiscrepancy = Database['public']['Tables']['arrival_discrepan
 export type SyncLog = Database['public']['Tables']['sync_logs']['Row'];
 export type Truck = Database['public']['Tables']['trucks']['Row'];
 export type OfficeVisit = Database['public']['Tables']['office_visits']['Row'];
+export type CustomLocationDb = Database['public']['Tables']['custom_locations']['Row'];

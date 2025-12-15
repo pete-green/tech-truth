@@ -1,8 +1,9 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle } from 'lucide-react';
+import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag } from 'lucide-react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
+import { getCategoryIcon, getCategoryColors } from '@/lib/location-logos';
 
 interface MapLocation {
   latitude: number;
@@ -11,10 +12,17 @@ interface MapLocation {
   address?: string;
 }
 
+interface LabelLocationData {
+  latitude: number;
+  longitude: number;
+  address: string;
+}
+
 interface DayTimelineProps {
   timeline: DayTimeline;
   onShowGpsLocation?: (jobId: string, jobNumber: string) => void;
   onShowMapLocation?: (location: MapLocation) => void;
+  onLabelLocation?: (location: LabelLocationData) => void;
 }
 
 function formatDuration(minutes: number): string {
@@ -26,7 +34,7 @@ function formatDuration(minutes: number): string {
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
-function EventIcon({ type, isUnnecessary }: { type: TimelineEvent['type']; isUnnecessary?: boolean }) {
+function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEvent['type']; isUnnecessary?: boolean; customCategory?: string }) {
   switch (type) {
     case 'left_home':
     case 'arrived_home':
@@ -41,6 +49,10 @@ function EventIcon({ type, isUnnecessary }: { type: TimelineEvent['type']; isUnn
     case 'arrived_unknown':
     case 'left_unknown':
       return <HelpCircle className="w-4 h-4" />;
+    case 'arrived_custom':
+    case 'left_custom':
+      // Show category icon as text if available
+      return <Tag className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
@@ -64,6 +76,10 @@ function getEventLabel(event: TimelineEvent): string {
       return 'Stopped at Unknown Location';
     case 'left_unknown':
       return 'Left Unknown Location';
+    case 'arrived_custom':
+      return `Stopped at ${event.customLocationName || 'Custom Location'}`;
+    case 'left_custom':
+      return `Left ${event.customLocationName || 'Custom Location'}`;
     default:
       return 'Unknown Event';
   }
@@ -134,6 +150,16 @@ function getEventStyles(event: TimelineEvent): {
         iconBg: 'bg-yellow-500',
         text: 'text-yellow-900',
       };
+    case 'arrived_custom':
+    case 'left_custom':
+      // Use category-specific colors if available
+      const categoryColors = getCategoryColors(event.customLocationCategory);
+      return {
+        bg: categoryColors.bg,
+        border: categoryColors.border,
+        iconBg: 'bg-teal-500',
+        text: categoryColors.text,
+      };
     default:
       return {
         bg: 'bg-gray-50',
@@ -149,11 +175,13 @@ function TimelineEventCard({
   showTravelTime,
   onShowGpsLocation,
   onShowMapLocation,
+  onLabelLocation,
 }: {
   event: TimelineEvent;
   showTravelTime: boolean;
   onShowGpsLocation?: (jobId: string, jobNumber: string) => void;
   onShowMapLocation?: (location: MapLocation) => void;
+  onLabelLocation?: (location: LabelLocationData) => void;
 }) {
   const styles = getEventStyles(event);
   const time = format(parseISO(event.timestamp), 'h:mm a');
@@ -243,32 +271,74 @@ function TimelineEventCard({
             </div>
           )}
 
-          {/* Map link for all arrival events */}
-          {event.latitude && event.longitude && onShowMapLocation && (
-            event.type === 'arrived_job' ||
-            event.type === 'arrived_unknown' ||
-            event.type === 'arrived_office' ||
-            event.type === 'arrived_home'
-          ) && (
-            <button
-              onClick={() => onShowMapLocation({
-                latitude: event.latitude!,
-                longitude: event.longitude!,
-                label: event.type === 'arrived_job'
-                  ? `Job #${event.jobNumber}`
-                  : event.type === 'arrived_unknown'
-                  ? 'Unknown Stop'
-                  : event.type === 'arrived_office'
-                  ? 'Office'
-                  : 'Home',
-                address: event.address,
-              })}
-              className="mt-2 inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded transition-colors border border-blue-200"
-            >
-              <MapPin className="w-3 h-3" />
-              View on Map
-            </button>
+          {/* Custom location logo and category icon */}
+          {(event.type === 'arrived_custom' || event.type === 'left_custom') && (
+            <div className="mt-1 flex items-center gap-2">
+              {event.customLocationLogo && (
+                <img
+                  src={event.customLocationLogo}
+                  alt={event.customLocationName}
+                  className="w-6 h-6 object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              )}
+              {event.customLocationCategory && (
+                <span className="text-sm">
+                  {getCategoryIcon(event.customLocationCategory)}
+                </span>
+              )}
+            </div>
           )}
+
+          {/* Action buttons */}
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            {/* Map link for all arrival events */}
+            {event.latitude && event.longitude && onShowMapLocation && (
+              event.type === 'arrived_job' ||
+              event.type === 'arrived_unknown' ||
+              event.type === 'arrived_office' ||
+              event.type === 'arrived_home' ||
+              event.type === 'arrived_custom'
+            ) && (
+              <button
+                onClick={() => onShowMapLocation({
+                  latitude: event.latitude!,
+                  longitude: event.longitude!,
+                  label: event.type === 'arrived_job'
+                    ? `Job #${event.jobNumber}`
+                    : event.type === 'arrived_unknown'
+                    ? 'Unknown Stop'
+                    : event.type === 'arrived_office'
+                    ? 'Office'
+                    : event.type === 'arrived_custom'
+                    ? event.customLocationName || 'Custom Location'
+                    : 'Home',
+                  address: event.address,
+                })}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+              >
+                <MapPin className="w-3 h-3" />
+                View on Map
+              </button>
+            )}
+
+            {/* Label This Location button for unknown stops */}
+            {event.type === 'arrived_unknown' && event.latitude && event.longitude && onLabelLocation && (
+              <button
+                onClick={() => onLabelLocation({
+                  latitude: event.latitude!,
+                  longitude: event.longitude!,
+                  address: event.address || 'Unknown Location',
+                })}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-teal-600 hover:bg-teal-50 rounded transition-colors border border-teal-200"
+              >
+                <Tag className="w-3 h-3" />
+                Label This Location
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -279,6 +349,7 @@ export default function DayTimelineComponent({
   timeline,
   onShowGpsLocation,
   onShowMapLocation,
+  onLabelLocation,
 }: DayTimelineProps) {
   const formattedDate = format(parseISO(timeline.date), 'MMMM d, yyyy');
 
@@ -362,6 +433,7 @@ export default function DayTimelineComponent({
             showTravelTime={index > 0}
             onShowGpsLocation={onShowGpsLocation}
             onShowMapLocation={onShowMapLocation}
+            onLabelLocation={onLabelLocation}
           />
         ))}
       </div>

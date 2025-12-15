@@ -8,7 +8,9 @@ export type TimelineEventType =
   | 'arrived_job'
   | 'left_job'
   | 'arrived_unknown'
-  | 'left_unknown';
+  | 'left_unknown'
+  | 'arrived_custom'
+  | 'left_custom';
 
 export interface TimelineEvent {
   id: string;
@@ -35,6 +37,12 @@ export interface TimelineEvent {
   varianceMinutes?: number;    // How early/late (positive = late)
   isUnnecessary?: boolean;     // For office visits before first job
   isFirstJob?: boolean;        // Mark first job of the day
+
+  // Custom location info (for arrived_custom/left_custom events)
+  customLocationId?: string;
+  customLocationName?: string;
+  customLocationLogo?: string;
+  customLocationCategory?: string;
 }
 
 export interface DayTimeline {
@@ -75,4 +83,5 @@ export interface TimelineInput {
   segments: import('../lib/verizon-connect').VehicleSegment[];
   jobs: import('./reports').JobDetail[];
   techConfig: TechTimelineConfig;
+  customLocations?: import('./custom-location').CustomLocation[];
 }

@@ -18,7 +18,9 @@ import TechnicianFilter from '@/components/TechnicianFilter';
 import ExpandableTechnicianRow from '@/components/ExpandableTechnicianRow';
 import GpsLocationModal from '@/components/GpsLocationModal';
 import SimpleMapModal from '@/components/SimpleMapModal';
+import LabelLocationModal from '@/components/LabelLocationModal';
 import { TechnicianFilterItem, TechnicianDayDetails, JobDetail, GpsModalState } from '@/types/reports';
+import { LocationCategory } from '@/types/custom-location';
 
 interface SimpleMapModalState {
   isOpen: boolean;
@@ -27,6 +29,13 @@ interface SimpleMapModalState {
   label: string;
   address?: string;
   technicianName: string;
+}
+
+interface LabelLocationModalState {
+  isOpen: boolean;
+  latitude: number;
+  longitude: number;
+  address: string;
 }
 
 interface TechnicianStats {
@@ -116,6 +125,9 @@ export default function ReportsPage() {
 
   // Simple Map Modal (for unknown locations, office visits, etc.)
   const [simpleMapModal, setSimpleMapModal] = useState<SimpleMapModalState | null>(null);
+
+  // Label Location Modal
+  const [labelLocationModal, setLabelLocationModal] = useState<LabelLocationModalState | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -269,6 +281,46 @@ export default function ReportsPage() {
       address: location.address,
       technicianName,
     });
+  };
+
+  const handleLabelLocation = (location: { latitude: number; longitude: number; address: string }) => {
+    setLabelLocationModal({
+      isOpen: true,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      address: location.address,
+    });
+  };
+
+  const handleSaveCustomLocation = async (data: {
+    name: string;
+    category: LocationCategory;
+    logoUrl?: string;
+    radiusFeet: number;
+  }) => {
+    if (!labelLocationModal) return;
+
+    const response = await fetch('/api/custom-locations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: data.name,
+        category: data.category,
+        logoUrl: data.logoUrl,
+        centerLatitude: labelLocationModal.latitude,
+        centerLongitude: labelLocationModal.longitude,
+        radiusFeet: data.radiusFeet,
+        address: labelLocationModal.address,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to save location');
+    }
+
+    // Clear cached timeline data so it will be reloaded with new custom location
+    setTechnicianDetails(new Map());
   };
 
   const exportToCSV = () => {
@@ -659,6 +711,7 @@ export default function ReportsPage() {
                             loading={loadingDetails.has(tech.id)}
                             onShowGpsLocation={handleShowGpsLocation}
                             onShowMapLocation={handleShowMapLocation}
+                            onLabelLocation={handleLabelLocation}
                           />
                         ))}
                       </tbody>
@@ -720,6 +773,18 @@ export default function ReportsPage() {
           label={simpleMapModal.label}
           address={simpleMapModal.address}
           technicianName={simpleMapModal.technicianName}
+        />
+      )}
+
+      {/* Label Location Modal */}
+      {labelLocationModal && (
+        <LabelLocationModal
+          isOpen={labelLocationModal.isOpen}
+          onClose={() => setLabelLocationModal(null)}
+          latitude={labelLocationModal.latitude}
+          longitude={labelLocationModal.longitude}
+          address={labelLocationModal.address}
+          onSave={handleSaveCustomLocation}
         />
       )}
     </div>

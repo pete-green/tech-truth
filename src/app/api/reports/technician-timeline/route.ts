@@ -4,6 +4,7 @@ import { getVehicleSegments } from '@/lib/verizon-connect';
 import { buildDayTimeline } from '@/lib/timeline-builder';
 import { JobDetail } from '@/types/reports';
 import { TechTimelineConfig, DayTimeline } from '@/types/timeline';
+import { CustomLocationRow, rowToCustomLocation } from '@/types/custom-location';
 import { OFFICE_LOCATION } from '@/lib/geo-utils';
 import { parseISO, differenceInMinutes } from 'date-fns';
 
@@ -141,6 +142,14 @@ export async function GET(req: NextRequest) {
       segments = [];
     }
 
+    // Fetch custom locations for matching against GPS stops
+    const { data: customLocationRows } = await supabase
+      .from('custom_locations')
+      .select('*');
+
+    const customLocations = (customLocationRows as CustomLocationRow[] || [])
+      .map(rowToCustomLocation);
+
     // Build tech config
     const techConfig: TechTimelineConfig = {
       takesTruckHome: technician.takes_truck_home || false,
@@ -166,6 +175,7 @@ export async function GET(req: NextRequest) {
       segments,
       jobs: jobDetails,
       techConfig,
+      customLocations,
     });
 
     return NextResponse.json({

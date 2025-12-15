@@ -3,6 +3,7 @@
 import { VehicleSegment } from './verizon-connect';
 import { JobDetail } from '@/types/reports';
 import { TimelineEvent, TimelineInput, TechTimelineConfig, DayTimeline } from '@/types/timeline';
+import { CustomLocation } from '@/types/custom-location';
 import {
   calculateDistanceFeet,
   isNearOffice,
@@ -65,18 +66,44 @@ function isNearHome(
 }
 
 /**
- * Classify a location as home, office, or job site
+ * Find a matching custom location for a given coordinate
+ * Returns the custom location if within its geofence radius, null otherwise
+ */
+function findMatchingCustomLocation(
+  lat: number,
+  lon: number,
+  customLocations?: CustomLocation[]
+): CustomLocation | null {
+  if (!customLocations || customLocations.length === 0) return null;
+
+  for (const loc of customLocations) {
+    const distance = calculateDistanceFeet(lat, lon, loc.centerLatitude, loc.centerLongitude);
+    if (distance <= loc.radiusFeet) {
+      return loc;
+    }
+  }
+  return null;
+}
+
+/**
+ * Classify a location as home, office, job site, custom location, or unknown
  */
 function classifyLocation(
   lat: number,
   lon: number,
   techConfig: TechTimelineConfig,
-  matchedJob?: JobDetail
-): 'home' | 'office' | 'job' | 'unknown' {
-  if (matchedJob) return 'job';
-  if (isNearOffice(lat, lon)) return 'office';
-  if (techConfig.takesTruckHome && isNearHome(lat, lon, techConfig.homeLocation)) return 'home';
-  return 'unknown';
+  matchedJob?: JobDetail,
+  customLocations?: CustomLocation[]
+): { type: 'home' | 'office' | 'job' | 'custom' | 'unknown'; customLocation?: CustomLocation } {
+  if (matchedJob) return { type: 'job' };
+
+  // Check custom locations BEFORE office (custom locations take priority)
+  const customMatch = findMatchingCustomLocation(lat, lon, customLocations);
+  if (customMatch) return { type: 'custom', customLocation: customMatch };
+
+  if (isNearOffice(lat, lon)) return { type: 'office' };
+  if (techConfig.takesTruckHome && isNearHome(lat, lon, techConfig.homeLocation)) return { type: 'home' };
+  return { type: 'unknown' };
 }
 
 /**
@@ -97,7 +124,7 @@ function formatSegmentAddress(location: VehicleSegment['StartLocation']): string
  * Build a comprehensive daily timeline from GPS segments and job data
  */
 export function buildDayTimeline(input: TimelineInput): DayTimeline {
-  const { date, technicianId, technicianName, segments, jobs, techConfig } = input;
+  const { date, technicianId, technicianName, segments, jobs, techConfig, customLocations } = input;
 
   const events: TimelineEvent[] = [];
   let eventId = 0;
@@ -146,17 +173,18 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
   // Process first segment specially - where did they START?
   const firstSegment = sortedSegments[0];
   const startLocation = firstSegment.StartLocation!;
-  const startLocationType = classifyLocation(
+  const startClassification = classifyLocation(
     startLocation.Latitude,
     startLocation.Longitude,
     techConfig,
-    undefined // Start location shouldn't match a job
+    undefined, // Start location shouldn't match a job
+    customLocations
   );
 
   // Create "left" event for starting location
   const startTime = parseVerizonUtcTimestamp(firstSegment.StartDateUtc!);
 
-  if (startLocationType === 'home') {
+  if (startClassification.type === 'home') {
     events.push({
       id: `event-${eventId++}`,
       type: 'left_home',
@@ -165,7 +193,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       latitude: startLocation.Latitude,
       longitude: startLocation.Longitude,
     });
-  } else if (startLocationType === 'office') {
+  } else if (startClassification.type === 'office') {
     events.push({
       id: `event-${eventId++}`,
       type: 'left_office',
@@ -173,6 +201,19 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       address: formatSegmentAddress(startLocation),
       latitude: startLocation.Latitude,
       longitude: startLocation.Longitude,
+    });
+  } else if (startClassification.type === 'custom' && startClassification.customLocation) {
+    events.push({
+      id: `event-${eventId++}`,
+      type: 'left_custom',
+      timestamp: startTime.toISOString(),
+      address: startClassification.customLocation.address || formatSegmentAddress(startLocation),
+      latitude: startLocation.Latitude,
+      longitude: startLocation.Longitude,
+      customLocationId: startClassification.customLocation.id,
+      customLocationName: startClassification.customLocation.name,
+      customLocationLogo: startClassification.customLocation.logoUrl,
+      customLocationCategory: startClassification.customLocation.category,
     });
   }
 
@@ -187,11 +228,12 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     const arrivalTime = parseVerizonUtcTimestamp(segment.EndDateUtc);
     const matchedJob = segmentJobMatches.get(i);
 
-    const endLocationType = classifyLocation(
+    const endClassification = classifyLocation(
       segment.EndLocation.Latitude,
       segment.EndLocation.Longitude,
       techConfig,
-      matchedJob
+      matchedJob,
+      customLocations
     );
 
     // Calculate travel time from previous departure
@@ -217,7 +259,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     }
 
     // Create arrival event
-    if (endLocationType === 'home') {
+    if (endClassification.type === 'home') {
       events.push({
         id: `event-${eventId++}`,
         type: 'arrived_home',
@@ -228,7 +270,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         travelMinutes,
         durationMinutes,
       });
-    } else if (endLocationType === 'office') {
+    } else if (endClassification.type === 'office') {
       totalOfficeVisits++;
 
       // Check if this is an unnecessary visit (take-home truck stopped at office before first job)
@@ -265,7 +307,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           longitude: segment.EndLocation.Longitude,
         });
       }
-    } else if (endLocationType === 'job' && matchedJob) {
+    } else if (endClassification.type === 'job' && matchedJob) {
       const isFirstJob = matchedJob.isFirstJob || (!firstJobProcessed && matchedJob.id === firstJob?.id);
 
       // Check if late
@@ -318,7 +360,41 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           customerName: matchedJob.customerName || undefined,
         });
       }
-    } else if (endLocationType === 'unknown') {
+    } else if (endClassification.type === 'custom' && endClassification.customLocation) {
+      // Custom labeled location (supply house, gas station, etc.)
+      const customLoc = endClassification.customLocation;
+
+      events.push({
+        id: `event-${eventId++}`,
+        type: 'arrived_custom',
+        timestamp: arrivalTime.toISOString(),
+        address: customLoc.address || formatSegmentAddress(segment.EndLocation),
+        latitude: segment.EndLocation.Latitude,
+        longitude: segment.EndLocation.Longitude,
+        travelMinutes,
+        durationMinutes,
+        customLocationId: customLoc.id,
+        customLocationName: customLoc.name,
+        customLocationLogo: customLoc.logoUrl,
+        customLocationCategory: customLoc.category,
+      });
+
+      // Add departure event if we have duration
+      if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
+        events.push({
+          id: `event-${eventId++}`,
+          type: 'left_custom',
+          timestamp: previousDepartureTime.toISOString(),
+          address: customLoc.address || formatSegmentAddress(segment.EndLocation),
+          latitude: segment.EndLocation.Latitude,
+          longitude: segment.EndLocation.Longitude,
+          customLocationId: customLoc.id,
+          customLocationName: customLoc.name,
+          customLocationLogo: customLoc.logoUrl,
+          customLocationCategory: customLoc.category,
+        });
+      }
+    } else if (endClassification.type === 'unknown') {
       // Show unknown stops - these could be lunch, supply house, personal errands, etc.
       // Only show if they stayed for more than 2 minutes (filter out traffic lights, etc.)
       if (durationMinutes !== undefined && durationMinutes >= 2) {

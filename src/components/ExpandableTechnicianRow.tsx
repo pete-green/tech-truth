@@ -27,6 +27,12 @@ interface MapLocation {
   address?: string;
 }
 
+interface LabelLocationData {
+  latitude: number;
+  longitude: number;
+  address: string;
+}
+
 interface ExpandableTechnicianRowProps {
   technician: TechnicianStats;
   expanded: boolean;
@@ -35,6 +41,7 @@ interface ExpandableTechnicianRowProps {
   loading: boolean;
   onShowGpsLocation: (job: JobDetail, technicianName: string) => void;
   onShowMapLocation?: (location: MapLocation, technicianName: string) => void;
+  onLabelLocation?: (location: LabelLocationData) => void;
 }
 
 export default function ExpandableTechnicianRow({
@@ -45,6 +52,7 @@ export default function ExpandableTechnicianRow({
   loading,
   onShowGpsLocation,
   onShowMapLocation,
+  onLabelLocation,
 }: ExpandableTechnicianRowProps) {
   // View mode: 'jobs' for old table view, 'timeline' for new timeline view
   // Default to 'jobs' to avoid multiple simultaneous API calls on expand
@@ -247,6 +255,7 @@ export default function ExpandableTechnicianRow({
                           timeline={timeline}
                           onShowGpsLocation={handleTimelineGpsClick}
                           onShowMapLocation={handleMapLocationClick}
+                          onLabelLocation={onLabelLocation}
                         />
                       );
                     }
