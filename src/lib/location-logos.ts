@@ -52,11 +52,12 @@ export const LOCATION_PRESETS: LocationPreset[] = [
   // Gas Stations
   { name: 'Sheetz', category: 'gas_station', logoUrl: 'https://mma.prnewswire.com/media/75030/sheetz__inc__logo.jpg?p=facebook' },
   { name: 'BP', category: 'gas_station', logoUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRv5eiZ1pSLj7soXrEUcn-kQMsW2QTUqkLAtw&s' },
-  { name: 'Shell', category: 'gas_station', logoUrl: 'https://logo.clearbit.com/shell.com' },
+  { name: 'Shell', category: 'gas_station', logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/e/e8/Shell_logo.svg/1200px-Shell_logo.svg.png' },
   { name: 'Exxon', category: 'gas_station', logoUrl: 'https://logo.clearbit.com/exxonmobil.com' },
   { name: 'Speedway', category: 'gas_station', logoUrl: 'https://logo.clearbit.com/speedway.com' },
   { name: 'Circle K', category: 'gas_station', logoUrl: 'https://logo.clearbit.com/circlek.com' },
   { name: "QuikTrip", category: 'gas_station', logoUrl: 'https://logo.clearbit.com/quiktrip.com' },
+  { name: '7-Eleven', category: 'gas_station', logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/7-eleven_logo.svg/1200px-7-eleven_logo.svg.png' },
 
   // Supply Houses
   { name: 'Ferguson', category: 'supply_house', logoUrl: 'https://logo.clearbit.com/ferguson.com' },
@@ -67,7 +68,7 @@ export const LOCATION_PRESETS: LocationPreset[] = [
   { name: 'Lennox', category: 'supply_house', logoUrl: 'https://logo.clearbit.com/lennox.com' },
 
   // Parts Stores
-  { name: 'Home Depot', category: 'parts_store', logoUrl: 'https://logo.clearbit.com/homedepot.com' },
+  { name: 'Home Depot', category: 'parts_store', logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/TheHomeDepot.svg/1200px-TheHomeDepot.svg.png' },
   { name: "Lowe's", category: 'parts_store', logoUrl: 'https://logo.clearbit.com/lowes.com' },
   { name: 'AutoZone', category: 'parts_store', logoUrl: 'https://logo.clearbit.com/autozone.com' },
   { name: 'Advance Auto Parts', category: 'parts_store', logoUrl: 'https://logo.clearbit.com/advanceautoparts.com' },
