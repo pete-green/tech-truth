@@ -38,7 +38,8 @@ export default function ExpandableTechnicianRow({
   onShowGpsLocation,
 }: ExpandableTechnicianRowProps) {
   // View mode: 'jobs' for old table view, 'timeline' for new timeline view
-  const [viewMode, setViewMode] = useState<'jobs' | 'timeline'>('timeline');
+  // Default to 'jobs' to avoid multiple simultaneous API calls on expand
+  const [viewMode, setViewMode] = useState<'jobs' | 'timeline'>('jobs');
 
   // Timeline data cache: date -> timeline
   const [timelines, setTimelines] = useState<Record<string, DayTimelineType>>({});
@@ -204,14 +205,9 @@ export default function ExpandableTechnicianRow({
                 {/* Days list */}
                 {dayDetails.days.map((day) => {
                   if (viewMode === 'timeline') {
-                    // Timeline view - fetch on demand
+                    // Timeline view - load on demand with button click
                     const timeline = timelines[day.date];
                     const isLoadingTimeline = loadingTimelines[day.date];
-
-                    // Trigger fetch if not loaded
-                    if (!timeline && !isLoadingTimeline) {
-                      fetchTimeline(day.date);
-                    }
 
                     if (isLoadingTimeline) {
                       return (
@@ -238,15 +234,27 @@ export default function ExpandableTechnicianRow({
                       );
                     }
 
-                    // Fallback while waiting for fetch to trigger
+                    // Show button to load timeline (don't auto-load to avoid multiple API calls)
                     return (
                       <div key={day.date} className="border rounded-lg overflow-hidden bg-gray-50 mb-3">
-                        <div className="px-4 py-2 bg-gray-100 border-b">
-                          <span className="font-medium text-gray-900">{day.date}</span>
-                          <span className="text-gray-500 ml-2">({day.dayOfWeek})</span>
+                        <div className="px-4 py-2 bg-gray-100 border-b flex items-center justify-between">
+                          <div>
+                            <span className="font-medium text-gray-900">{day.date}</span>
+                            <span className="text-gray-500 ml-2">({day.dayOfWeek})</span>
+                          </div>
+                          <span className="text-sm text-gray-500">{day.jobs.length} job{day.jobs.length !== 1 ? 's' : ''}</span>
                         </div>
-                        <div className="p-4 text-gray-500 text-sm">
-                          Loading...
+                        <div className="p-4 flex items-center justify-center">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              fetchTimeline(day.date);
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                          >
+                            <Clock className="w-4 h-4" />
+                            Load GPS Timeline
+                          </button>
                         </div>
                       </div>
                     );
