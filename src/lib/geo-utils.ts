@@ -2,6 +2,46 @@
 import type { VehicleSegment } from './verizon-connect';
 
 /**
+ * Geocode an address to lat/lng coordinates using OpenStreetMap Nominatim
+ * Free service, no API key required, but has rate limits (1 req/sec)
+ *
+ * @param address - Full address string (e.g., "123 Main St, Greensboro, NC 27401")
+ * @returns Coordinates or null if geocoding failed
+ */
+export async function geocodeAddress(address: string): Promise<{ lat: number; lon: number } | null> {
+  try {
+    const encodedAddress = encodeURIComponent(address);
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`,
+      {
+        headers: {
+          'User-Agent': 'TechTruth/1.0 (Technician Tracking Application)',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error(`Geocoding failed with status ${response.status}`);
+      return null;
+    }
+
+    const results = await response.json();
+
+    if (results && results.length > 0) {
+      return {
+        lat: parseFloat(results[0].lat),
+        lon: parseFloat(results[0].lon),
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    return null;
+  }
+}
+
+/**
  * Calculate the distance between two points using the Haversine formula
  * @returns Distance in feet
  */

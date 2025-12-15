@@ -4,7 +4,7 @@ import { getTechnicians, getAppointments, getAppointmentAssignmentsByJobId, getJ
 import { getVehicleGPSData, getVehicleSegments, GPSHistoryPoint, VehicleSegment } from '@/lib/verizon-connect';
 import { parseISO, differenceInMinutes, subMinutes, addHours, format } from 'date-fns';
 import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
-import { findArrivalTime, findArrivalFromSegments, ARRIVAL_RADIUS_FEET, detectOfficeVisits, TechOfficeConfig } from '@/lib/geo-utils';
+import { findArrivalTime, findArrivalFromSegments, ARRIVAL_RADIUS_FEET, detectOfficeVisits, TechOfficeConfig, geocodeAddress } from '@/lib/geo-utils';
 
 export const maxDuration = 60; // Vercel/Netlify function timeout (up to 60s on pro)
 
@@ -141,14 +141,28 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Get the active assignment (there might be multiple if tech was reassigned)
-        const assignment = assignments.find((a: any) => a.active) || assignments[0];
-        const stTechId = assignment.technicianId;
+        // Get ALL active assignments - a job may have multiple techs assigned
+        // We need to find any tech that has a truck assigned in our system
+        const activeAssignments = assignments.filter((a: any) => a.active);
+        if (activeAssignments.length === 0 && assignments.length > 0) {
+          // Fall back to first assignment if none are active
+          activeAssignments.push(assignments[0]);
+        }
 
-        // Check if this tech has a truck assigned in our system
-        const techData = techLookup.get(stTechId);
+        // Find the first assigned tech that has a truck in our system
+        let techData = null;
+        let stTechId = null;
+        for (const assignment of activeAssignments) {
+          const possibleTech = techLookup.get(assignment.technicianId);
+          if (possibleTech) {
+            techData = possibleTech;
+            stTechId = assignment.technicianId;
+            break;
+          }
+        }
+
         if (!techData) {
-          // Tech doesn't have a truck assigned, skip
+          // No assigned tech has a truck, skip this job
           continue;
         }
 
@@ -194,20 +208,29 @@ export async function POST(req: NextRequest) {
 
         // Step 3c: Get location with coordinates
         const location = await getLocation(jobDetails.locationId);
+        const jobAddress = `${location.address?.street || ''}, ${location.address?.city || ''}, ${location.address?.state || ''} ${location.address?.zip || ''}`.trim();
 
-        if (!location.address?.latitude || !location.address?.longitude) {
-          errors.push({
-            type: 'no_coordinates',
-            techName: techData.name,
-            jobId: appointment.jobId,
-            error: 'Location has no coordinates',
-          });
-          continue;
+        let jobLat = location.address?.latitude;
+        let jobLon = location.address?.longitude;
+
+        // If Service Titan doesn't have coordinates, try geocoding the address
+        if (!jobLat || !jobLon) {
+          console.log(`    No coordinates in ST, trying geocoding for: ${jobAddress}`);
+          const geocoded = await geocodeAddress(jobAddress);
+          if (geocoded) {
+            jobLat = geocoded.lat;
+            jobLon = geocoded.lon;
+            console.log(`    Geocoded successfully: ${jobLat}, ${jobLon}`);
+          } else {
+            errors.push({
+              type: 'no_coordinates',
+              techName: techData.name,
+              jobId: appointment.jobId,
+              error: `Location has no coordinates and geocoding failed for: ${jobAddress}`,
+            });
+            continue;
+          }
         }
-
-        const jobLat = location.address.latitude;
-        const jobLon = location.address.longitude;
-        const jobAddress = `${location.address.street}, ${location.address.city}, ${location.address.state} ${location.address.zip}`;
 
         console.log(`  Processing: ${techData.name} - Job ${appointment.jobId} at ${format(scheduledTime, 'h:mm a')}${isFirstJob ? ' (FIRST JOB)' : ''}`);
         console.log(`    Address: ${jobAddress}`);

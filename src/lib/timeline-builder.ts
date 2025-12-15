@@ -148,13 +148,64 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     );
 
   if (sortedSegments.length === 0) {
-    // No GPS data for this day
+    // No GPS data for this day - but still include punch events
+    const punchOnlyEvents: TimelineEvent[] = [];
+    let punchEventId = 0;
+
+    if (input.punches && input.punches.length > 0) {
+      for (const punch of input.punches) {
+        let eventType: TimelineEvent['type'];
+        if (punch.punch_type === 'ClockIn' || punch.clock_in_time) {
+          eventType = 'clock_in';
+        } else if (punch.punch_type === 'ClockOut' || punch.clock_out_time) {
+          eventType = 'clock_out';
+        } else if (punch.punch_type === 'MealStart') {
+          eventType = 'meal_start';
+        } else if (punch.punch_type === 'MealEnd') {
+          eventType = 'meal_end';
+        } else {
+          continue;
+        }
+
+        const punchTime = eventType === 'clock_in'
+          ? (punch.clock_in_time || punch.punch_time)
+          : eventType === 'clock_out'
+            ? (punch.clock_out_time || punch.punch_time)
+            : punch.punch_time;
+
+        if (!punchTime) continue;
+
+        const isExcused = input.excusedOfficeVisit &&
+                          punch.gps_location_type === 'office' &&
+                          eventType === 'clock_in';
+
+        punchOnlyEvents.push({
+          id: `event-${punchEventId++}`,
+          type: eventType,
+          timestamp: punchTime,
+          address: punch.gps_address ?? undefined,
+          latitude: punch.gps_latitude ?? undefined,
+          longitude: punch.gps_longitude ?? undefined,
+          punchId: punch.id,
+          origin: punch.origin ?? undefined,
+          isViolation: (punch.is_violation && !isExcused) ?? undefined,
+          violationReason: punch.is_violation && !isExcused ? (punch.violation_reason ?? undefined) : undefined,
+          expectedLocationType: punch.expected_location_type ?? undefined,
+          canBeExcused: punch.can_be_excused ?? undefined,
+          isExcused: isExcused,
+          excusedReason: isExcused ? input.excusedOfficeVisit?.reason : undefined,
+          gpsLocationType: punch.gps_location_type ?? undefined,
+        });
+      }
+      punchOnlyEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    }
+
     return {
       date,
       dayOfWeek: format(parseISO(date), 'EEEE'),
       technicianId,
       technicianName,
-      events: [],
+      events: punchOnlyEvents,
       totalJobs: jobs.length,
       totalOfficeVisits: 0,
       totalDriveMinutes: 0,

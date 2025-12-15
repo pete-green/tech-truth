@@ -85,7 +85,7 @@ export async function POST(request: Request) {
 
     console.log(`Starting punch sync for ${date}...`);
 
-    // Step 1: Fetch technicians with Paylocity IDs and truck assignments
+    // Step 1: Fetch technicians with Paylocity IDs and GPS vehicle IDs
     const { data: technicians, error: techError } = await supabase
       .from('technicians')
       .select(`
@@ -95,11 +95,7 @@ export async function POST(request: Request) {
         takes_truck_home,
         home_latitude,
         home_longitude,
-        truck_id,
-        trucks (
-          id,
-          verizon_vehicle_id
-        )
+        verizon_vehicle_id
       `)
       .not('paylocity_employee_id', 'is', null);
 
@@ -165,21 +161,19 @@ export async function POST(request: Request) {
           continue;
         }
 
-        // Skip if no truck/GPS
-        const truckArray = tech.trucks as Array<{ id: string; verizon_vehicle_id: string }> | null;
-        const truck = truckArray?.[0] || null;
-        if (!truck?.verizon_vehicle_id) {
+        // Skip if no GPS vehicle
+        if (!tech.verizon_vehicle_id) {
           results.skipped++;
           continue;
         }
 
         results.matched++;
 
-        // Fetch GPS history for this technician's truck
+        // Fetch GPS history for this technician's vehicle
         let gpsSegments: VehicleSegment[] = [];
         try {
           const segmentsResponse = await getVehicleSegments(
-            truck.verizon_vehicle_id,
+            tech.verizon_vehicle_id,
             `${date}T00:00:00`
           );
           gpsSegments = segmentsResponse?.Segments || [];
@@ -214,7 +208,8 @@ export async function POST(request: Request) {
 
         // Check for clock-in violation
         let isViolation = false;
-        let violationReason = null;
+        let violationReason: string | null = null;
+        let canBeExcused = false;
         let expectedLocationType = tech.takes_truck_home ? 'job' : 'office';
         const hasExcusedVisit = excusedTechIds.has(tech.id);
 
@@ -224,15 +219,18 @@ export async function POST(request: Request) {
             if (clockInLocationType === 'home') {
               isViolation = true;
               violationReason = 'Clocked in at HOME instead of job site';
+              canBeExcused = false;
             } else if (clockInLocationType === 'office' && !hasExcusedVisit) {
               isViolation = true;
               violationReason = 'Clocked in at OFFICE - should go direct to job';
+              canBeExcused = true; // Office visits can be excused
             }
           } else {
             // Should be at office
             if (clockInLocationType !== 'office') {
               isViolation = true;
               violationReason = `Clocked in at ${clockInLocationType.toUpperCase()} instead of office`;
+              canBeExcused = false;
             }
           }
         }
@@ -257,6 +255,7 @@ export async function POST(request: Request) {
             is_violation: isViolation,
             violation_reason: violationReason,
             expected_location_type: expectedLocationType,
+            can_be_excused: canBeExcused,
             clock_in_time: punch.clockInTime,
             clock_out_time: punch.clockOutTime,
             duration_hours: punch.durationHours,
