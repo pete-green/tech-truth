@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const dateParam = body.date;
-    const firstJobOnly = body.firstJobOnly !== false; // Default to true
+    const firstJobOnly = body.firstJobOnly === true; // Default to false - sync ALL jobs
 
     // Default to today if no date provided
     // IMPORTANT: Use EST timezone for date boundaries since the business operates in Eastern Time
@@ -509,7 +509,7 @@ export async function POST(req: NextRequest) {
       summary: {
         techniciansWithTrucks: techsWithTrucks?.length || 0,
         appointmentsFound: appointments.length,
-        firstJobsProcessed: jobsProcessed,
+        jobsProcessed: jobsProcessed,
         lateArrivals: discrepanciesFound,
         onTimeArrivals: jobsProcessed - discrepanciesFound,
         officeVisitsDetected,
