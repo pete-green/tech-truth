@@ -10,6 +10,43 @@ import {
 } from '@/lib/punch-utils';
 import { getVehicleSegments, type VehicleSegment } from '@/lib/verizon-connect';
 
+/**
+ * Convert Paylocity local time (Eastern) to proper ISO timestamp with timezone
+ * Paylocity returns times like "2025-12-15T08:00:00" which is Eastern Time
+ */
+function toEasternTimestamp(localTime: string | null): string | null {
+  if (!localTime) return null;
+
+  // Parse the date to determine if it's DST or standard time
+  const date = new Date(localTime);
+  const month = date.getMonth(); // 0-11
+  const day = date.getDate();
+
+  // DST in US: Second Sunday in March to First Sunday in November
+  // Simplified check: March 8-Nov 1 is roughly DST (EDT = -04:00)
+  // Otherwise EST = -05:00
+  let offset = '-05:00'; // EST (standard)
+
+  if (month > 2 && month < 10) {
+    // April through October - definitely EDT
+    offset = '-04:00';
+  } else if (month === 2 && day >= 8) {
+    // March after 8th - likely EDT (could be more precise but this is close enough)
+    offset = '-04:00';
+  } else if (month === 10 && day < 7) {
+    // First week of November - might still be EDT
+    offset = '-04:00';
+  }
+
+  // If the time already has timezone info, return as-is
+  if (localTime.includes('+') || localTime.includes('Z') || localTime.match(/\d{2}:\d{2}:\d{2}[+-]/)) {
+    return localTime;
+  }
+
+  // Append the Eastern timezone offset
+  return `${localTime}${offset}`;
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -237,6 +274,10 @@ export async function POST(request: Request) {
 
         if (isViolation) results.violations++;
 
+        // Convert Paylocity local times to proper Eastern timestamps
+        const clockInTimestamp = toEasternTimestamp(punch.clockInTime);
+        const clockOutTimestamp = toEasternTimestamp(punch.clockOutTime);
+
         // Upsert punch record
         const { error: upsertError } = await supabase
           .from('punch_records')
@@ -244,7 +285,7 @@ export async function POST(request: Request) {
             technician_id: tech.id,
             paylocity_employee_id: punch.employeeId,
             punch_date: punch.punchDate,
-            punch_time: punch.clockInTime,
+            punch_time: clockInTimestamp,
             punch_type: 'ClockIn',
             gps_latitude: gpsAtClockIn?.latitude,
             gps_longitude: gpsAtClockIn?.longitude,
@@ -256,8 +297,8 @@ export async function POST(request: Request) {
             violation_reason: violationReason,
             expected_location_type: expectedLocationType,
             can_be_excused: canBeExcused,
-            clock_in_time: punch.clockInTime,
-            clock_out_time: punch.clockOutTime,
+            clock_in_time: clockInTimestamp,
+            clock_out_time: clockOutTimestamp,
             duration_hours: punch.durationHours,
             origin: punch.origin,
             cost_center_name: punch.costCenterName,
