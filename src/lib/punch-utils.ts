@@ -50,17 +50,25 @@ export interface VehicleSegmentInput {
 
 /**
  * Find the GPS location closest to a given time from vehicle segments
+ *
+ * GPS segments represent stops (when vehicle is stationary).
+ * Between segments = driving (no GPS location).
+ * For in-transit scenarios, we find the nearest segment.
+ *
+ * Default tolerance is 60 minutes to handle:
+ * - Clock-ins/outs while driving (common)
+ * - Small timing discrepancies between systems
  */
 export function findLocationAtTime(
   segments: VehicleSegmentInput[],
   targetTime: Date,
-  toleranceMs: number = 5 * 60 * 1000 // 5 minutes
+  toleranceMs: number = 60 * 60 * 1000 // 60 minutes (increased from 5)
 ): GPSLocation | null {
   if (!segments || segments.length === 0) return null;
 
   const targetMs = targetTime.getTime();
 
-  // Find segment where targetTime falls between start and end
+  // First, find segment where targetTime falls between start and end (at a stop)
   for (const seg of segments) {
     const startMs = new Date(seg.StartDateUtc).getTime();
     const endMs = seg.EndDateUtc ? new Date(seg.EndDateUtc).getTime() : startMs + (24 * 60 * 60 * 1000);
@@ -81,7 +89,8 @@ export function findLocationAtTime(
     }
   }
 
-  // If no exact match, find nearest segment within tolerance
+  // No exact match - likely in-transit (driving between stops)
+  // Find the nearest segment start/end within tolerance
   let nearestSegment: VehicleSegmentInput | null = null;
   let nearestDistance = Infinity;
   let useEnd = false;
@@ -90,7 +99,7 @@ export function findLocationAtTime(
     const startMs = new Date(seg.StartDateUtc).getTime();
     const endMs = seg.EndDateUtc ? new Date(seg.EndDateUtc).getTime() : startMs;
 
-    // Check distance to segment start
+    // Check distance to segment start (arrival at location)
     const distToStart = Math.abs(targetMs - startMs);
     if (distToStart < nearestDistance && distToStart <= toleranceMs) {
       nearestDistance = distToStart;
@@ -98,7 +107,7 @@ export function findLocationAtTime(
       useEnd = false;
     }
 
-    // Check distance to segment end
+    // Check distance to segment end (departure from location)
     if (seg.EndDateUtc && seg.EndLocation) {
       const distToEnd = Math.abs(targetMs - endMs);
       if (distToEnd < nearestDistance && distToEnd <= toleranceMs) {
