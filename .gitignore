@@ -52,3 +52,6 @@ next-env.d.ts
 # Claude Code
 .claude/
 .mcp.json
+
+# Sensitive API credentials
+Paylocity API Info/
