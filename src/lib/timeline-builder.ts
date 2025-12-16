@@ -200,6 +200,26 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       punchOnlyEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     }
 
+    // Detect missing clock-out for punch-only events
+    const hasClockInOnly = punchOnlyEvents.some(e => e.type === 'clock_in');
+    const hasClockOutOnly = punchOnlyEvents.some(e => e.type === 'clock_out');
+    const hasMissingClockOutOnly = hasClockInOnly && !hasClockOutOnly;
+
+    if (hasMissingClockOutOnly) {
+      const lastEvent = punchOnlyEvents[punchOnlyEvents.length - 1];
+      const warningTimestamp = lastEvent
+        ? new Date(new Date(lastEvent.timestamp).getTime() + 60000).toISOString()
+        : `${date}T23:59:00.000Z`;
+
+      punchOnlyEvents.push({
+        id: `event-${punchEventId}`,
+        type: 'missing_clock_out',
+        timestamp: warningTimestamp,
+        isViolation: true,
+        violationReason: 'Technician clocked in but never clocked out',
+      });
+    }
+
     return {
       date,
       dayOfWeek: format(parseISO(date), 'EEEE'),
@@ -211,6 +231,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       totalDriveMinutes: 0,
       firstJobOnTime: null,
       firstJobVariance: null,
+      hasMissingClockOut: hasMissingClockOutOnly,
     };
   }
 
@@ -540,6 +561,28 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }
 
+  // Detect missing clock-out: has clock_in but no clock_out
+  const hasClockIn = events.some(e => e.type === 'clock_in');
+  const hasClockOut = events.some(e => e.type === 'clock_out');
+  const hasMissingClockOut = hasClockIn && !hasClockOut;
+
+  // Add missing_clock_out warning event at end of timeline if applicable
+  if (hasMissingClockOut) {
+    // Find the last event's timestamp to place the warning after it
+    const lastEvent = events[events.length - 1];
+    const warningTimestamp = lastEvent
+      ? new Date(new Date(lastEvent.timestamp).getTime() + 60000).toISOString() // 1 minute after last event
+      : `${date}T23:59:00.000Z`;
+
+    events.push({
+      id: `event-${eventId++}`,
+      type: 'missing_clock_out',
+      timestamp: warningTimestamp,
+      isViolation: true,
+      violationReason: 'Technician clocked in but never clocked out',
+    });
+  }
+
   return {
     date,
     dayOfWeek: format(parseISO(date), 'EEEE'),
@@ -551,5 +594,6 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     totalDriveMinutes,
     firstJobOnTime,
     firstJobVariance,
+    hasMissingClockOut,
   };
 }

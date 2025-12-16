@@ -14,7 +14,8 @@ export type TimelineEventType =
   | 'clock_in'
   | 'clock_out'
   | 'meal_start'
-  | 'meal_end';
+  | 'meal_end'
+  | 'missing_clock_out'; // Warning when tech clocked in but never clocked out
 
 export interface TimelineEvent {
   id: string;
@@ -73,6 +74,7 @@ export interface DayTimeline {
   totalDriveMinutes: number;
   firstJobOnTime: boolean | null;
   firstJobVariance: number | null;
+  hasMissingClockOut: boolean; // True if tech clocked in but never clocked out
 }
 
 // Tech configuration for timeline building
