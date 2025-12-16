@@ -8,12 +8,16 @@ const supabase = createClient(
 
 /**
  * GET - Fetch punch violations for a date range
+ * Includes:
+ * - Clock-in/out location violations
+ * - Missing clock-outs (technicians who clocked in but didn't clock out)
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get('startDate');
   const endDate = searchParams.get('endDate');
   const technicianId = searchParams.get('technicianId');
+  const includeMissingClockOuts = searchParams.get('includeMissingClockOuts') !== 'false';
 
   if (!startDate || !endDate) {
     return NextResponse.json({
@@ -24,7 +28,7 @@ export async function GET(request: Request) {
 
   try {
     // Build query for punch records with violations
-    let query = supabase
+    let violationsQuery = supabase
       .from('punch_records')
       .select(`
         id,
@@ -52,21 +56,55 @@ export async function GET(request: Request) {
 
     // Filter by technician if provided
     if (technicianId) {
-      query = query.eq('technician_id', technicianId);
+      violationsQuery = violationsQuery.eq('technician_id', technicianId);
     }
 
-    const { data: violations, error } = await query;
+    const { data: violations, error } = await violationsQuery;
+
+    // Also find missing clock-outs (ClockIn without corresponding ClockOut)
+    let missingClockOuts: any[] = [];
+    if (includeMissingClockOuts) {
+      let missingQuery = supabase
+        .from('punch_records')
+        .select(`
+          id,
+          technician_id,
+          punch_date,
+          punch_time,
+          punch_type,
+          gps_address,
+          clock_in_time,
+          clock_out_time,
+          origin
+        `)
+        .gte('punch_date', startDate)
+        .lte('punch_date', endDate)
+        .eq('punch_type', 'ClockIn')
+        .is('clock_out_time', null)
+        .order('punch_date', { ascending: true });
+
+      if (technicianId) {
+        missingQuery = missingQuery.eq('technician_id', technicianId);
+      }
+
+      const { data: missing } = await missingQuery;
+      missingClockOuts = missing || [];
+    }
 
     if (error) {
       throw new Error(`Failed to fetch violations: ${error.message}`);
     }
 
-    // Get technician names
-    const techIds = [...new Set(violations?.map(v => v.technician_id).filter(Boolean))];
+    // Get technician names (include both violations and missing clock-outs)
+    const allTechIds = [...new Set([
+      ...(violations?.map(v => v.technician_id) || []),
+      ...(missingClockOuts.map(m => m.technician_id)),
+    ].filter(Boolean))];
+
     const { data: technicians } = await supabase
       .from('technicians')
       .select('id, name')
-      .in('id', techIds);
+      .in('id', allTechIds.length > 0 ? allTechIds : ['none']);
 
     const techMap = new Map(technicians?.map(t => [t.id, t.name]) || []);
 
@@ -108,12 +146,30 @@ export async function GET(request: Request) {
       };
     }) || [];
 
+    // Enrich missing clock-outs with technician names
+    const enrichedMissingClockOuts = missingClockOuts.map(m => ({
+      id: m.id,
+      technicianId: m.technician_id,
+      technicianName: techMap.get(m.technician_id) || 'Unknown',
+      date: m.punch_date,
+      type: 'missing_clock_out',
+      clockInTime: m.clock_in_time,
+      timestamp: m.punch_time,
+      reason: 'Clocked in but did not clock out',
+      address: m.gps_address,
+      origin: m.origin,
+      punchId: m.id,
+    }));
+
     return NextResponse.json({
       success: true,
       violations: enrichedViolations,
-      totalCount: enrichedViolations.length,
-      activeCount: enrichedViolations.filter(v => !v.isExcused).length,
+      missingClockOuts: enrichedMissingClockOuts,
+      totalCount: enrichedViolations.length + enrichedMissingClockOuts.length,
+      violationCount: enrichedViolations.length,
+      activeViolationCount: enrichedViolations.filter(v => !v.isExcused).length,
       excusedCount: enrichedViolations.filter(v => v.isExcused).length,
+      missingClockOutCount: enrichedMissingClockOuts.length,
     });
   } catch (error) {
     console.error('Error fetching violations:', error);

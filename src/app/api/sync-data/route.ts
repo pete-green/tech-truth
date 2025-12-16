@@ -259,7 +259,8 @@ export async function POST(req: NextRequest) {
           if (isSameDay) {
             try {
               const todayStr = format(today, 'yyyy-MM-dd') + 'T00:00:00Z';
-              const segmentsData = await getVehicleSegments(techData.verizon_vehicle_id, todayStr);
+              const todayEndStr = format(today, 'yyyy-MM-dd') + 'T23:59:59Z';
+              const segmentsData = await getVehicleSegments(techData.verizon_vehicle_id, todayStr, todayEndStr);
               segments = segmentsData.Segments || [];
               console.log(`    Vehicle segments: ${segments.length}`);
 
@@ -432,9 +433,13 @@ export async function POST(req: NextRequest) {
 
       try {
         // Get today's segments for this technician's vehicle
+        // Use full day window to capture all segments including late arrivals
+        const dayStartUtc = fromZonedTime(`${dateStr}T00:00:00`, EST_TIMEZONE).toISOString();
+        const dayEndUtc = fromZonedTime(`${dateStr}T23:59:59`, EST_TIMEZONE).toISOString();
         const segmentsData = await getVehicleSegments(
           tech.verizon_vehicle_id,
-          fromZonedTime(`${dateStr}T00:00:00`, EST_TIMEZONE).toISOString()
+          dayStartUtc,
+          dayEndUtc
         );
         const segments = segmentsData.Segments || [];
 

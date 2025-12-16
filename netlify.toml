@@ -16,7 +16,14 @@
 [functions."*"]
   node_bundler = "esbuild"
 
-# Scheduled function for arrival sync
-# Runs every 15 minutes during work hours (6 AM - 6 PM EST, Mon-Fri)
+# Scheduled function for arrival sync + punch data
+# Runs every 15 minutes, 24/7 to capture all technician activity
+# Syncs: 1) Job/GPS/arrival data, 2) Clock in/out from Paylocity
 [functions."scheduled-sync"]
-  schedule = "*/15 11-23 * * 1-5"
+  schedule = "*/15 * * * *"
+
+# End-of-day reconciliation sync
+# Runs at 4:30 AM UTC (11:30 PM EST) daily to ensure all data is captured
+# Catches any late clock-outs or GPS segments that were missed
+[functions."end-of-day-sync"]
+  schedule = "30 4 * * *"

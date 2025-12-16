@@ -186,6 +186,8 @@ export async function POST(request: Request) {
       matched: 0,
       violations: 0,
       skipped: 0,
+      missingClockOuts: 0,
+      clockOutsCreated: 0,
       errors: [] as string[],
     };
 
@@ -207,11 +209,13 @@ export async function POST(request: Request) {
         results.matched++;
 
         // Fetch GPS history for this technician's vehicle
+        // Use full day window to capture all segments including late arrivals
         let gpsSegments: VehicleSegment[] = [];
         try {
           const segmentsResponse = await getVehicleSegments(
             tech.verizon_vehicle_id,
-            `${date}T00:00:00`
+            `${date}T00:00:00Z`,
+            `${date}T23:59:59Z`
           );
           gpsSegments = segmentsResponse?.Segments || [];
         } catch (gpsError) {
@@ -278,8 +282,13 @@ export async function POST(request: Request) {
         const clockInTimestamp = toEasternTimestamp(punch.clockInTime);
         const clockOutTimestamp = toEasternTimestamp(punch.clockOutTime);
 
-        // Upsert punch record
-        const { error: upsertError } = await supabase
+        // Track missing clock-outs
+        if (clockInTimestamp && !clockOutTimestamp) {
+          results.missingClockOuts++;
+        }
+
+        // Upsert ClockIn record
+        const { error: clockInError } = await supabase
           .from('punch_records')
           .upsert({
             technician_id: tech.id,
@@ -306,10 +315,83 @@ export async function POST(request: Request) {
             onConflict: 'paylocity_employee_id,punch_time',
           });
 
-        if (upsertError) {
-          results.errors.push(`${tech.name}: ${upsertError.message}`);
+        if (clockInError) {
+          results.errors.push(`${tech.name} ClockIn: ${clockInError.message}`);
         } else {
           results.processed++;
+        }
+
+        // Create separate ClockOut record if clock-out time exists
+        if (clockOutTimestamp) {
+          // Get GPS location at clock-out time
+          let gpsAtClockOut = null;
+          let clockOutLocationType = 'no_gps';
+
+          if (gpsSegments.length > 0) {
+            const clockOutDate = new Date(punch.clockOutTime!);
+            gpsAtClockOut = findLocationAtTime(gpsSegments, clockOutDate);
+
+            if (gpsAtClockOut) {
+              const homeLocation = tech.home_latitude && tech.home_longitude
+                ? { lat: tech.home_latitude, lon: tech.home_longitude }
+                : null;
+
+              clockOutLocationType = determineLocationType(
+                gpsAtClockOut.latitude,
+                gpsAtClockOut.longitude,
+                OFFICE_LOCATION,
+                homeLocation,
+                customLocations || [],
+                jobLocations
+              );
+            }
+          }
+
+          // Check for clock-out violations (clocking out at home instead of job/office)
+          let clockOutViolation = false;
+          let clockOutViolationReason: string | null = null;
+
+          if (clockOutLocationType !== 'no_gps' && clockOutLocationType !== 'unknown') {
+            if (tech.takes_truck_home && clockOutLocationType === 'home') {
+              clockOutViolation = true;
+              clockOutViolationReason = 'Clocked out at HOME - should clock out when leaving last job';
+            }
+          }
+
+          if (clockOutViolation) results.violations++;
+
+          const { error: clockOutError } = await supabase
+            .from('punch_records')
+            .upsert({
+              technician_id: tech.id,
+              paylocity_employee_id: punch.employeeId,
+              punch_date: punch.punchDate,
+              punch_time: clockOutTimestamp,
+              punch_type: 'ClockOut',
+              gps_latitude: gpsAtClockOut?.latitude,
+              gps_longitude: gpsAtClockOut?.longitude,
+              gps_address: gpsAtClockOut?.address,
+              gps_location_type: clockOutLocationType,
+              gps_timestamp: gpsAtClockOut?.timestamp?.toISOString(),
+              gps_distance_from_punch_feet: 0,
+              is_violation: clockOutViolation,
+              violation_reason: clockOutViolationReason,
+              expected_location_type: tech.takes_truck_home ? 'job' : 'office',
+              can_be_excused: false,
+              clock_in_time: clockInTimestamp,
+              clock_out_time: clockOutTimestamp,
+              duration_hours: punch.durationHours,
+              origin: punch.origin,
+              cost_center_name: punch.costCenterName,
+            }, {
+              onConflict: 'paylocity_employee_id,punch_time',
+            });
+
+          if (clockOutError) {
+            results.errors.push(`${tech.name} ClockOut: ${clockOutError.message}`);
+          } else {
+            results.clockOutsCreated++;
+          }
         }
       } catch (punchError) {
         results.errors.push(`Processing error: ${punchError}`);

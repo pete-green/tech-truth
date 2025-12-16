@@ -205,14 +205,22 @@ export interface VehicleSegmentsResponse {
  * This endpoint works for same-day data, unlike status/history
  * @param vehicleNumber - The vehicle number (e.g., "2021")
  * @param startDateUtc - ISO 8601 date timestamp for start of day
+ * @param endDateUtc - Optional ISO 8601 date timestamp for end of day (defaults to end of start day)
  * @returns Vehicle segments data with trips and stops
  */
 export async function getVehicleSegments(
   vehicleNumber: string,
-  startDateUtc: string
+  startDateUtc: string,
+  endDateUtc?: string
 ): Promise<VehicleSegmentsResponse> {
+  // Build URL with optional end date parameter
+  let url = `/rad/v1/vehicles/${vehicleNumber}/segments?startdateutc=${startDateUtc}`;
+  if (endDateUtc) {
+    url += `&enddateutc=${endDateUtc}`;
+  }
+
   // API returns an array with one element containing the vehicle data
-  const response = await verizonFetch(`/rad/v1/vehicles/${vehicleNumber}/segments?startdateutc=${startDateUtc}`);
+  const response = await verizonFetch(url);
   if (Array.isArray(response) && response.length > 0) {
     return response[0];
   }

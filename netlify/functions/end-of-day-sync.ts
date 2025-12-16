@@ -1,15 +1,27 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions';
 
-// Scheduled function to sync technician arrival data and punch records
-// Runs every 15 minutes during work hours (configured in netlify.toml)
-// Syncs: 1) Job/GPS/arrival data, 2) Clock in/out punch data from Paylocity
+// End-of-day reconciliation sync
+// Runs at 11:30 PM EST daily (4:30 AM UTC) to ensure all data is captured
+// - Catches late clock-outs from technicians who work late
+// - Fetches complete GPS segments for the day (arrivals home, etc.)
+// - Ensures no data is missed before the next business day
 
 const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
-  console.log('Scheduled sync triggered at:', new Date().toISOString());
+  console.log('End-of-day sync triggered at:', new Date().toISOString());
 
   // Get the base URL from environment or construct it
   const baseUrl = process.env.URL || process.env.DEPLOY_URL || 'https://tech-truth.netlify.app';
-  const todayDate = new Date().toISOString().split('T')[0];
+
+  // Calculate today's date in EST
+  // This function runs at 4:30 AM UTC = 11:30 PM EST
+  // So we want to sync "today" in EST terms
+  const now = new Date();
+  // EST is UTC-5 (ignoring DST for simplicity - close enough for this use case)
+  const estOffset = 5 * 60 * 60 * 1000;
+  const estNow = new Date(now.getTime() - estOffset);
+  const todayDate = estNow.toISOString().split('T')[0];
+
+  console.log(`Running end-of-day sync for date: ${todayDate}`);
 
   const results: {
     syncData?: any;
@@ -18,28 +30,29 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
   } = { errors: [] };
 
   try {
-    // Step 1: Sync job/GPS/arrival data
-    console.log('Step 1: Syncing job/GPS/arrival data...');
+    // Step 1: Full sync of job/GPS/arrival data for today
+    // Use fullDay: true to process all jobs (not just first jobs)
+    console.log('Step 1: Full sync of job/GPS/arrival data...');
     const syncResponse = await fetch(`${baseUrl}/api/sync-data`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         date: todayDate,
-        firstJobOnly: true,
+        firstJobOnly: false, // Process ALL jobs for end-of-day
       }),
     });
 
     if (syncResponse.ok) {
       results.syncData = await syncResponse.json();
-      console.log('Sync data completed:', results.syncData.summary);
+      console.log('Full sync completed:', results.syncData.summary);
     } else {
       const errorData = await syncResponse.json();
-      results.errors.push(`Sync data failed: ${errorData.error || 'Unknown error'}`);
-      console.error('Sync data error:', errorData);
+      results.errors.push(`Full sync failed: ${errorData.error || 'Unknown error'}`);
+      console.error('Full sync error:', errorData);
     }
 
-    // Step 2: Sync Paylocity punch data (clock in/out)
-    console.log('Step 2: Syncing Paylocity punch data...');
+    // Step 2: Sync Paylocity punch data (catch any late clock-outs)
+    console.log('Step 2: Syncing Paylocity punch data (late clock-outs)...');
     const punchResponse = await fetch(`${baseUrl}/api/sync-punches`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -51,6 +64,7 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       console.log('Punch sync completed:', {
         processed: results.punchData.processed,
         violations: results.punchData.violations,
+        missingClockOuts: results.punchData.missingClockOuts || 0,
       });
     } else {
       const errorData = await punchResponse.json();
@@ -61,27 +75,28 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
     // Return combined results
     const hasErrors = results.errors.length > 0;
     return {
-      statusCode: hasErrors ? 207 : 200, // 207 = Multi-Status (partial success)
+      statusCode: hasErrors ? 207 : 200,
       body: JSON.stringify({
         success: !hasErrors,
-        message: hasErrors ? 'Scheduled sync completed with errors' : 'Scheduled sync completed',
+        message: hasErrors ? 'End-of-day sync completed with errors' : 'End-of-day sync completed',
         timestamp: new Date().toISOString(),
         date: todayDate,
         syncData: results.syncData?.summary,
         punchData: results.punchData ? {
           processed: results.punchData.processed,
           violations: results.punchData.violations,
+          missingClockOuts: results.punchData.missingClockOuts || 0,
         } : null,
         errors: results.errors,
       }),
     };
   } catch (error: any) {
-    console.error('Scheduled sync error:', error);
+    console.error('End-of-day sync error:', error);
 
     return {
       statusCode: 500,
       body: JSON.stringify({
-        error: error.message || 'Scheduled sync failed',
+        error: error.message || 'End-of-day sync failed',
         timestamp: new Date().toISOString(),
       }),
     };

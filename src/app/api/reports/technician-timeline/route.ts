@@ -128,13 +128,16 @@ export async function GET(req: NextRequest) {
     });
 
     // Fetch GPS segments from Verizon for this date
+    // Use full day window (midnight to midnight) to capture all segments including late arrivals home
     const startDateUtc = `${date}T00:00:00Z`;
+    const endDateUtc = `${date}T23:59:59Z`;
 
     let segments: Awaited<ReturnType<typeof getVehicleSegments>>['Segments'] = [];
     try {
       const segmentsResponse = await getVehicleSegments(
         technician.verizon_vehicle_id,
-        startDateUtc
+        startDateUtc,
+        endDateUtc
       );
       segments = segmentsResponse?.Segments || [];
     } catch (gpsError: any) {
