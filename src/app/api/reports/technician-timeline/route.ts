@@ -6,7 +6,7 @@ import { JobDetail } from '@/types/reports';
 import { TechTimelineConfig, DayTimeline, TimelinePunchRecord } from '@/types/timeline';
 import { CustomLocationRow, rowToCustomLocation } from '@/types/custom-location';
 import { OFFICE_LOCATION } from '@/lib/geo-utils';
-import { parseISO, differenceInMinutes } from 'date-fns';
+import { parseISO, differenceInMinutes, addDays, format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,9 +128,11 @@ export async function GET(req: NextRequest) {
     });
 
     // Fetch GPS segments from Verizon for this date
-    // Use full day window (midnight to midnight) to capture all segments including late arrivals home
+    // Extend into next morning (5 AM EST = 10 AM UTC) to capture techs who work past midnight
+    // This ensures "left job" and "arrived home" events are captured for late workers
     const startDateUtc = `${date}T00:00:00Z`;
-    const endDateUtc = `${date}T23:59:59Z`;
+    const nextDay = format(addDays(parseISO(date), 1), 'yyyy-MM-dd');
+    const endDateUtc = `${nextDay}T10:00:00Z`; // 10 AM UTC = 5 AM EST - captures late night arrivals
 
     let segments: Awaited<ReturnType<typeof getVehicleSegments>>['Segments'] = [];
     try {
@@ -139,7 +141,24 @@ export async function GET(req: NextRequest) {
         startDateUtc,
         endDateUtc
       );
-      segments = segmentsResponse?.Segments || [];
+      const allSegments = segmentsResponse?.Segments || [];
+
+      // Filter segments to exclude next-day work (keep only segments that are part of this day's work)
+      // Include: segments starting on target date, or starting early next morning (before 5 AM EST)
+      const targetDate = parseISO(date);
+      const nextDayWorkStart = new Date(Date.UTC(
+        targetDate.getUTCFullYear(),
+        targetDate.getUTCMonth(),
+        targetDate.getUTCDate() + 1,
+        10, 0, 0 // 10 AM UTC = 5 AM EST - next day's work starts after this
+      ));
+
+      segments = allSegments.filter(seg => {
+        if (!seg.StartDateUtc) return false;
+        // Verizon timestamps don't have 'Z', parse as UTC by appending Z
+        const startTime = new Date(seg.StartDateUtc + (seg.StartDateUtc.includes('Z') ? '' : 'Z'));
+        return startTime < nextDayWorkStart;
+      });
     } catch (gpsError: any) {
       console.error('Error fetching GPS segments:', gpsError);
       segments = [];
