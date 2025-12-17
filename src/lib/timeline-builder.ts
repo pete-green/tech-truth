@@ -589,11 +589,13 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
   // Add punch events (clock in/out, meal breaks)
   if (input.punches && input.punches.length > 0) {
     for (const punch of input.punches) {
-      // Determine event type
+      // Determine event type based on punch_type field
+      // Note: punch_type is the authoritative field - clock_in_time/clock_out_time
+      // are just the actual times recorded, present on both ClockIn and ClockOut records
       let eventType: TimelineEvent['type'];
-      if (punch.punch_type === 'ClockIn' || punch.clock_in_time) {
+      if (punch.punch_type === 'ClockIn') {
         eventType = 'clock_in';
-      } else if (punch.punch_type === 'ClockOut' || punch.clock_out_time) {
+      } else if (punch.punch_type === 'ClockOut') {
         eventType = 'clock_out';
       } else if (punch.punch_type === 'MealStart') {
         eventType = 'meal_start';
@@ -603,12 +605,10 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         continue; // Unknown punch type
       }
 
-      // Use the appropriate time
-      const punchTime = eventType === 'clock_in'
-        ? (punch.clock_in_time || punch.punch_time)
-        : eventType === 'clock_out'
-          ? (punch.clock_out_time || punch.punch_time)
-          : punch.punch_time;
+      // Use the punch_time field which is set correctly during sync
+      // For ClockIn records: punch_time = clock_in_time (when they clocked in)
+      // For ClockOut records: punch_time = clock_out_time (when they clocked out)
+      const punchTime = punch.punch_time;
 
       if (!punchTime) continue;
 
