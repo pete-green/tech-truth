@@ -423,17 +423,20 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
             latitude: segment.EndLocation.Latitude,
             longitude: segment.EndLocation.Longitude,
           });
-          lastArrivalType = null;
+          // Mark that we just left office - prevents "Arrived at Office" right after "Left Office"
+          lastArrivalType = 'left_office';
         }
       }
     } else if (endClassification.type === 'job' && matchedJob) {
-      // Skip if we already have an arrival for this same job and haven't left yet
-      if (lastArrivalType === 'job' && lastArrivalJobId === matchedJob.id) {
+      // Skip if we already have an arrival for this same job OR we just left this same job
+      const isAtSameJob = (lastArrivalType === 'job' || lastArrivalType === 'left_job') && lastArrivalJobId === matchedJob.id;
+      if (isAtSameJob) {
         // Update duration on previous event instead of creating duplicate
         const lastJobEvent = events.findLast(e => e.type === 'arrived_job' && e.jobId === matchedJob.id);
         if (lastJobEvent && durationMinutes !== undefined) {
           lastJobEvent.durationMinutes = (lastJobEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
         }
+        // Keep tracking this job
       } else {
         // Check if this is first time visiting this job
         const isFirstVisitToJob = !jobsVisited.has(matchedJob.id);
@@ -492,9 +495,9 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
             jobId: matchedJob.id,
             customerName: matchedJob.customerName || undefined,
           });
-          // Reset last arrival tracking since we left
-          lastArrivalType = null;
-          lastArrivalJobId = null;
+          // Mark that we just left this job - prevents immediate re-arrival at same job
+          lastArrivalType = 'left_job';
+          lastArrivalJobId = matchedJob.id;
         }
       }
     } else if (endClassification.type === 'custom' && endClassification.customLocation) {
