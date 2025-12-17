@@ -285,8 +285,10 @@ export async function POST(request: Request) {
 
         results.matched++;
 
-        // Check if this is a meal segment - handle differently
-        const isMealSegment = punch.punchType?.toLowerCase() === 'meal';
+        // Check if this is a meal/break segment - handle differently
+        // Paylocity uses 'lunch' and 'break' as punchTypes, not 'meal'
+        const punchTypeLower = punch.punchType?.toLowerCase() || '';
+        const isMealSegment = punchTypeLower === 'lunch' || punchTypeLower === 'break';
 
         // Fetch GPS history for this technician's vehicle
         // Uses the breadcrumb trail API which gives actual location at each time point
