@@ -184,6 +184,8 @@ export async function getJobType(jobTypeId: number) {
 const jobTypeCache = new Map<number, { name: string; isFollowUp: boolean }>();
 
 // Get job type with caching and follow-up detection
+// NOTE: "Follow up" = non-physical (phone/admin) - don't track
+//       "Call back" = physical on-site visit - DO track like normal job
 export async function getJobTypeWithCache(jobTypeId: number): Promise<{ name: string; isFollowUp: boolean }> {
   if (jobTypeCache.has(jobTypeId)) {
     return jobTypeCache.get(jobTypeId)!;
@@ -192,11 +194,12 @@ export async function getJobTypeWithCache(jobTypeId: number): Promise<{ name: st
   try {
     const jobType = await getJobType(jobTypeId);
     const name = jobType.name || '';
-    // Check if job type name indicates a follow-up (case insensitive)
-    const isFollowUp = name.toLowerCase().includes('follow up') ||
-                       name.toLowerCase().includes('follow-up') ||
-                       name.toLowerCase().includes('callback') ||
-                       name.toLowerCase().includes('call back');
+    const nameLower = name.toLowerCase();
+
+    // Only "follow up" / "follow-up" are non-physical visits
+    // "callback" / "call back" are real physical jobs and should be tracked
+    const isFollowUp = (nameLower.includes('follow up') || nameLower.includes('follow-up')) &&
+                       !nameLower.includes('callback') && !nameLower.includes('call back');
 
     const result = { name, isFollowUp };
     jobTypeCache.set(jobTypeId, result);
