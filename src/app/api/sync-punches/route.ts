@@ -309,6 +309,8 @@ export async function POST(request: Request) {
         }
 
         // Upsert ClockIn record
+        // Note: We use paylocity_employee_id,punch_time,punch_type as the conflict key
+        // This allows a ClockOut and ClockIn at the same time (e.g., lunch break end/start)
         const { error: clockInError } = await supabase
           .from('punch_records')
           .upsert({
@@ -333,7 +335,7 @@ export async function POST(request: Request) {
             origin: punch.origin,
             cost_center_name: punch.costCenterName,
           }, {
-            onConflict: 'paylocity_employee_id,punch_time',
+            onConflict: 'paylocity_employee_id,punch_time,punch_type',
           });
 
         if (clockInError) {
@@ -405,7 +407,7 @@ export async function POST(request: Request) {
               origin: punch.origin,
               cost_center_name: punch.costCenterName,
             }, {
-              onConflict: 'paylocity_employee_id,punch_time',
+              onConflict: 'paylocity_employee_id,punch_time,punch_type',
             });
 
           if (clockOutError) {
