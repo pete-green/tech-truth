@@ -611,23 +611,30 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       if (!existing) {
         seenTimestamps.set(timeKey, punch);
       } else {
-        // If we have both ClockIn and ClockOut at same time:
-        // - Keep ClockOut if this is mid-day (there are punches after)
-        // - Keep ClockIn if this is the only occurrence
-        // For simplicity: prefer ClockOut over ClockIn at same timestamp (shows "went on break")
-        // But for the very first punch of day, prefer ClockIn
-        // And for the very last punch of day, prefer ClockOut
-        const isFirstPunch = sortedPunches.indexOf(punch) <= 1;
-        const isLastPunch = sortedPunches.indexOf(punch) >= sortedPunches.length - 2;
+        // When multiple punch types occur at the same timestamp, prioritize:
+        // 1. MealStart/MealEnd (most informative - shows meal break)
+        // 2. ClockOut at end of day, ClockIn at start of day
+        // 3. ClockOut mid-day (shows break)
+        const isMealPunch = punch.punch_type === 'MealStart' || punch.punch_type === 'MealEnd';
+        const existingIsMeal = existing.punch_type === 'MealStart' || existing.punch_type === 'MealEnd';
 
-        if (isFirstPunch && punch.punch_type === 'ClockIn') {
-          seenTimestamps.set(timeKey, punch); // Prefer ClockIn at start of day
-        } else if (isLastPunch && punch.punch_type === 'ClockOut') {
-          seenTimestamps.set(timeKey, punch); // Prefer ClockOut at end of day
-        } else if (existing.punch_type === 'ClockIn' && punch.punch_type === 'ClockOut') {
-          seenTimestamps.set(timeKey, punch); // Prefer ClockOut mid-day (going on break)
+        if (isMealPunch && !existingIsMeal) {
+          // Always prefer meal events over clock events (more informative)
+          seenTimestamps.set(timeKey, punch);
+        } else if (!isMealPunch && !existingIsMeal) {
+          // Both are clock events - use original logic
+          const isFirstPunch = sortedPunches.indexOf(punch) <= 1;
+          const isLastPunch = sortedPunches.indexOf(punch) >= sortedPunches.length - 2;
+
+          if (isFirstPunch && punch.punch_type === 'ClockIn') {
+            seenTimestamps.set(timeKey, punch); // Prefer ClockIn at start of day
+          } else if (isLastPunch && punch.punch_type === 'ClockOut') {
+            seenTimestamps.set(timeKey, punch); // Prefer ClockOut at end of day
+          } else if (existing.punch_type === 'ClockIn' && punch.punch_type === 'ClockOut') {
+            seenTimestamps.set(timeKey, punch); // Prefer ClockOut mid-day (going on break)
+          }
         }
-        // Otherwise keep existing
+        // Otherwise keep existing (meal events stay, or first clock event)
       }
     }
 
