@@ -281,6 +281,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       latitude: startLocation.Latitude,
       longitude: startLocation.Longitude,
     });
+    // Mark that we just left home - prevents "Arrived Home" right after "Left Home"
+    lastArrivalType = 'left_home';
   } else if (startClassification.type === 'office') {
     events.push({
       id: `event-${eventId++}`,
@@ -290,6 +292,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       latitude: startLocation.Latitude,
       longitude: startLocation.Longitude,
     });
+    // Mark that we just left office
+    lastArrivalType = 'left_office';
   } else if (startClassification.type === 'custom' && startClassification.customLocation) {
     events.push({
       id: `event-${eventId++}`,
@@ -303,6 +307,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       customLocationLogo: startClassification.customLocation.logoUrl,
       customLocationCategory: startClassification.customLocation.category,
     });
+    // Mark that we just left custom location
+    lastArrivalType = 'left_custom';
   }
 
   // Process each segment's END location (arrivals)
@@ -348,13 +354,14 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
 
     // Create arrival event (skip duplicates - consecutive arrivals at same location type)
     if (endClassification.type === 'home') {
-      // Skip if we already have a home arrival and haven't left yet
-      if (lastArrivalType === 'home') {
-        // Update duration on previous event instead of creating duplicate
+      // Skip if we already have a home arrival OR we just left home (first segment ending at home)
+      if (lastArrivalType === 'home' || lastArrivalType === 'left_home') {
+        // Update duration on previous event instead of creating duplicate (if we have an arrival)
         const lastHomeEvent = events.findLast(e => e.type === 'arrived_home');
         if (lastHomeEvent && durationMinutes !== undefined) {
           lastHomeEvent.durationMinutes = (lastHomeEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
         }
+        // Keep lastArrivalType as-is, we're still at home
       } else {
         events.push({
           id: `event-${eventId++}`,
@@ -370,12 +377,13 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         lastArrivalJobId = null;
       }
     } else if (endClassification.type === 'office') {
-      // Skip if we're already at office
-      if (lastArrivalType === 'office') {
+      // Skip if we're already at office OR we just left office
+      if (lastArrivalType === 'office' || lastArrivalType === 'left_office') {
         const lastOfficeEvent = events.findLast(e => e.type === 'arrived_office');
         if (lastOfficeEvent && durationMinutes !== undefined) {
           lastOfficeEvent.durationMinutes = (lastOfficeEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
         }
+        // Keep lastArrivalType as-is
       } else {
         totalOfficeVisits++;
 
