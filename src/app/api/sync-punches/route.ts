@@ -175,6 +175,25 @@ export async function POST(request: Request) {
 
     console.log(`Fetched ${punches.length} punch records from Paylocity`);
 
+    // Pre-process: Find the first clock-in and last clock-out time for each employee
+    // This helps us identify lunch breaks vs start/end-of-day punches
+    const firstClockInByEmployee = new Map<string, string>();
+    const lastClockOutByEmployee = new Map<string, string>();
+    for (const punch of punches) {
+      if (punch.clockInTime) {
+        const existing = firstClockInByEmployee.get(punch.employeeId);
+        if (!existing || punch.clockInTime < existing) {
+          firstClockInByEmployee.set(punch.employeeId, punch.clockInTime);
+        }
+      }
+      if (punch.clockOutTime) {
+        const existing = lastClockOutByEmployee.get(punch.employeeId);
+        if (!existing || punch.clockOutTime > existing) {
+          lastClockOutByEmployee.set(punch.employeeId, punch.clockOutTime);
+        }
+      }
+    }
+
     // Step 3: Fetch custom locations
     const { data: customLocations } = await supabase
       .from('custom_locations')
@@ -269,27 +288,33 @@ export async function POST(request: Request) {
         }
 
         // Check for clock-in violation
+        // Only flag as violation if this is the FIRST clock-in of the day (not returning from lunch)
         let isViolation = false;
         let violationReason: string | null = null;
         let canBeExcused = false;
         let expectedLocationType = tech.takes_truck_home ? 'job' : 'office';
         const hasExcusedVisit = excusedTechIds.has(tech.id);
 
+        // Check if this is the first clock-in of the day for this employee
+        const firstClockIn = firstClockInByEmployee.get(punch.employeeId);
+        const isFirstClockIn = firstClockIn === punch.clockInTime;
+
         if (clockInLocationType !== 'no_gps' && clockInLocationType !== 'unknown') {
           if (tech.takes_truck_home) {
-            // Should be at job, unless excused office visit
-            if (clockInLocationType === 'home') {
+            // Only check for violations on the FIRST clock-in (start of day)
+            // Mid-day clock-ins (returning from lunch) are not violations
+            if (isFirstClockIn && clockInLocationType === 'home') {
               isViolation = true;
               violationReason = 'Clocked in at HOME instead of job site';
               canBeExcused = false;
-            } else if (clockInLocationType === 'office' && !hasExcusedVisit) {
+            } else if (isFirstClockIn && clockInLocationType === 'office' && !hasExcusedVisit) {
               isViolation = true;
               violationReason = 'Clocked in at OFFICE - should go direct to job';
               canBeExcused = true; // Office visits can be excused
             }
           } else {
-            // Should be at office
-            if (clockInLocationType !== 'office') {
+            // Should be at office - only check on first clock-in
+            if (isFirstClockIn && clockInLocationType !== 'office') {
               isViolation = true;
               violationReason = `Clocked in at ${clockInLocationType.toUpperCase()} instead of office`;
               canBeExcused = false;
@@ -371,11 +396,18 @@ export async function POST(request: Request) {
           }
 
           // Check for clock-out violations (clocking out at home instead of job/office)
+          // Only flag as violation if this is the LAST clock-out of the day (not a lunch break)
           let clockOutViolation = false;
           let clockOutViolationReason: string | null = null;
 
+          // Check if this is the last clock-out of the day for this employee
+          const lastClockOut = lastClockOutByEmployee.get(punch.employeeId);
+          const isLastClockOut = lastClockOut === punch.clockOutTime;
+
           if (clockOutLocationType !== 'no_gps' && clockOutLocationType !== 'unknown') {
-            if (tech.takes_truck_home && clockOutLocationType === 'home') {
+            // Only check for violations on the LAST clock-out (end of day)
+            // Mid-day clock-outs (lunch breaks) are not violations
+            if (isLastClockOut && tech.takes_truck_home && clockOutLocationType === 'home') {
               clockOutViolation = true;
               clockOutViolationReason = 'Clocked out at HOME - should clock out when leaving last job';
             }
