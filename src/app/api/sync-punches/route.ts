@@ -2,13 +2,9 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getCompanyPunchDetails, type PunchRecord } from '@/lib/paylocity';
 import {
-  processDayPunches,
-  findLocationAtTime,
   determineLocationType,
-  type TechnicianConfig,
-  type DayPunchSummary,
 } from '@/lib/punch-utils';
-import { getVehicleSegments, type VehicleSegment } from '@/lib/verizon-connect';
+import { getVehicleGPSHistory, type GPSHistoryPoint } from '@/lib/verizon-connect';
 
 /**
  * Convert Paylocity local time (Eastern) to proper ISO timestamp with timezone
@@ -57,6 +53,47 @@ const OFFICE_LOCATION = {
   lat: 36.0952,
   lon: -79.8273,
 };
+
+/**
+ * Find the GPS location closest to a given time from GPS history points
+ * GPS history gives us actual breadcrumb trail, not just stops
+ */
+function findLocationFromGPSHistory(
+  gpsHistory: GPSHistoryPoint[],
+  targetTime: Date,
+  toleranceMs: number = 10 * 60 * 1000 // 10 minutes
+): { latitude: number; longitude: number; address: string; timestamp: Date } | null {
+  if (!gpsHistory || gpsHistory.length === 0) return null;
+
+  const targetMs = targetTime.getTime();
+  let closest: GPSHistoryPoint | null = null;
+  let closestDistance = Infinity;
+
+  for (const point of gpsHistory) {
+    const pointTime = new Date(point.UpdateUtc).getTime();
+    const distance = Math.abs(targetMs - pointTime);
+
+    if (distance < closestDistance && distance <= toleranceMs) {
+      closestDistance = distance;
+      closest = point;
+    }
+  }
+
+  if (!closest) return null;
+
+  const address = [
+    closest.Address.AddressLine1,
+    closest.Address.Locality,
+    closest.Address.AdministrativeArea,
+  ].filter(Boolean).join(', ');
+
+  return {
+    latitude: closest.Latitude,
+    longitude: closest.Longitude,
+    address: address || 'Unknown',
+    timestamp: new Date(closest.UpdateUtc),
+  };
+}
 
 /**
  * GET - Fetch punch violations for a date
@@ -249,33 +286,32 @@ export async function POST(request: Request) {
         results.matched++;
 
         // Fetch GPS history for this technician's vehicle
-        // Query window needs to account for Eastern time punches:
-        // - Start at 4 AM EST (9 AM UTC) to capture early starts
-        // - End at 5 AM EST next day (10 AM UTC) to capture late arrivals home
-        let gpsSegments: VehicleSegment[] = [];
+        // Uses the breadcrumb trail API which gives actual location at each time point
+        // Query window: 4 AM EST (9 AM UTC) to 5 AM EST next day (10 AM UTC)
+        let gpsHistory: GPSHistoryPoint[] = [];
         try {
           const nextDate = new Date(date);
           nextDate.setDate(nextDate.getDate() + 1);
           const nextDateStr = nextDate.toISOString().split('T')[0];
 
-          const segmentsResponse = await getVehicleSegments(
+          gpsHistory = await getVehicleGPSHistory(
             tech.verizon_vehicle_id,
-            `${date}T09:00:00Z`,  // 4 AM EST = 9 AM UTC
-            `${nextDateStr}T10:00:00Z`  // 5 AM EST next day = 10 AM UTC
+            `${date}T09:00:00.000Z`,  // 4 AM EST = 9 AM UTC
+            `${nextDateStr}T10:00:00.000Z`  // 5 AM EST next day = 10 AM UTC
           );
-          gpsSegments = segmentsResponse?.Segments || [];
         } catch (gpsError) {
-          console.warn(`GPS fetch failed for ${tech.name}: ${gpsError}`);
+          console.warn(`GPS history fetch failed for ${tech.name}: ${gpsError}`);
         }
 
-        // Determine GPS location at clock-in time
-        let gpsAtClockIn = null;
+        // Determine GPS location at clock-in time using actual GPS breadcrumb data
+        let gpsAtClockIn: { latitude: number; longitude: number; address: string; timestamp: Date } | null = null;
         let clockInLocationType = 'no_gps';
-        let gpsDistanceFeet = 0;
 
-        if (punch.clockInTime && gpsSegments.length > 0) {
-          const clockInDate = new Date(punch.clockInTime);
-          gpsAtClockIn = findLocationAtTime(gpsSegments, clockInDate);
+        if (punch.clockInTime && gpsHistory.length > 0) {
+          // Convert Paylocity Eastern time to UTC for comparison
+          const clockInEastern = toEasternTimestamp(punch.clockInTime);
+          const clockInDate = new Date(clockInEastern!);
+          gpsAtClockIn = findLocationFromGPSHistory(gpsHistory, clockInDate);
 
           if (gpsAtClockIn) {
             const homeLocation = tech.home_latitude && tech.home_longitude
@@ -355,7 +391,7 @@ export async function POST(request: Request) {
             gps_address: gpsAtClockIn?.address,
             gps_location_type: clockInLocationType,
             gps_timestamp: gpsAtClockIn?.timestamp?.toISOString(),
-            gps_distance_from_punch_feet: gpsDistanceFeet,
+            gps_distance_from_punch_feet: 0, // Exact location from GPS history
             is_violation: isViolation,
             violation_reason: violationReason,
             expected_location_type: expectedLocationType,
@@ -377,13 +413,15 @@ export async function POST(request: Request) {
 
         // Create separate ClockOut record if clock-out time exists
         if (clockOutTimestamp) {
-          // Get GPS location at clock-out time
-          let gpsAtClockOut = null;
+          // Get GPS location at clock-out time using actual GPS breadcrumb data
+          let gpsAtClockOut: { latitude: number; longitude: number; address: string; timestamp: Date } | null = null;
           let clockOutLocationType = 'no_gps';
 
-          if (gpsSegments.length > 0) {
-            const clockOutDate = new Date(punch.clockOutTime!);
-            gpsAtClockOut = findLocationAtTime(gpsSegments, clockOutDate);
+          if (gpsHistory.length > 0) {
+            // Convert Paylocity Eastern time to UTC for comparison
+            const clockOutEastern = toEasternTimestamp(punch.clockOutTime!);
+            const clockOutDate = new Date(clockOutEastern!);
+            gpsAtClockOut = findLocationFromGPSHistory(gpsHistory, clockOutDate);
 
             if (gpsAtClockOut) {
               const homeLocation = tech.home_latitude && tech.home_longitude
