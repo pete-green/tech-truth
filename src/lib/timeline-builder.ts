@@ -249,6 +249,11 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
   // Track the last visible event departure time (for elapsed time calculation)
   let lastVisibleDepartureTime: Date | null = null;
 
+  // Track last arrival to dedupe consecutive arrivals at same location type
+  // This prevents multiple "Arrived Home" events when GPS registers multiple short segments
+  let lastArrivalType: string | null = null;
+  let lastArrivalJobId: string | null = null;
+
   // Find first job for late detection
   const firstJob = jobs.find(j => j.isFirstJob) || jobs[0];
   const firstJobScheduledTime = firstJob?.scheduledStart ? parseISO(firstJob.scheduledStart) : null;
@@ -341,107 +346,148 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       previousDepartureTime = null;
     }
 
-    // Create arrival event
+    // Create arrival event (skip duplicates - consecutive arrivals at same location type)
     if (endClassification.type === 'home') {
-      events.push({
-        id: `event-${eventId++}`,
-        type: 'arrived_home',
-        timestamp: arrivalTime.toISOString(),
-        address: techConfig.homeLocation?.address || formatSegmentAddress(segment.EndLocation),
-        latitude: segment.EndLocation.Latitude,
-        longitude: segment.EndLocation.Longitude,
-        travelMinutes,
-        durationMinutes,
-      });
-    } else if (endClassification.type === 'office') {
-      totalOfficeVisits++;
-
-      // Check if this is an unnecessary visit (take-home truck stopped at office before first job)
-      let isUnnecessary = false;
-      if (techConfig.takesTruckHome &&
-          techConfig.homeLocation &&
-          firstJobScheduledTime &&
-          arrivalTime.getTime() < firstJobScheduledTime.getTime() &&
-          events.length > 0 &&
-          events[0].type === 'left_home') {
-        isUnnecessary = true;
-      }
-
-      events.push({
-        id: `event-${eventId++}`,
-        type: 'arrived_office',
-        timestamp: arrivalTime.toISOString(),
-        address: formatSegmentAddress(segment.EndLocation),
-        latitude: segment.EndLocation.Latitude,
-        longitude: segment.EndLocation.Longitude,
-        travelMinutes,
-        durationMinutes,
-        isUnnecessary,
-      });
-
-      // Add departure event if we have duration
-      if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
+      // Skip if we already have a home arrival and haven't left yet
+      if (lastArrivalType === 'home') {
+        // Update duration on previous event instead of creating duplicate
+        const lastHomeEvent = events.findLast(e => e.type === 'arrived_home');
+        if (lastHomeEvent && durationMinutes !== undefined) {
+          lastHomeEvent.durationMinutes = (lastHomeEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
+        }
+      } else {
         events.push({
           id: `event-${eventId++}`,
-          type: 'left_office',
-          timestamp: previousDepartureTime.toISOString(),
+          type: 'arrived_home',
+          timestamp: arrivalTime.toISOString(),
+          address: techConfig.homeLocation?.address || formatSegmentAddress(segment.EndLocation),
+          latitude: segment.EndLocation.Latitude,
+          longitude: segment.EndLocation.Longitude,
+          travelMinutes,
+          durationMinutes,
+        });
+        lastArrivalType = 'home';
+        lastArrivalJobId = null;
+      }
+    } else if (endClassification.type === 'office') {
+      // Skip if we're already at office
+      if (lastArrivalType === 'office') {
+        const lastOfficeEvent = events.findLast(e => e.type === 'arrived_office');
+        if (lastOfficeEvent && durationMinutes !== undefined) {
+          lastOfficeEvent.durationMinutes = (lastOfficeEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
+        }
+      } else {
+        totalOfficeVisits++;
+
+        // Check if this is an unnecessary visit (take-home truck stopped at office before first job)
+        let isUnnecessary = false;
+        if (techConfig.takesTruckHome &&
+            techConfig.homeLocation &&
+            firstJobScheduledTime &&
+            arrivalTime.getTime() < firstJobScheduledTime.getTime() &&
+            events.length > 0 &&
+            events[0].type === 'left_home') {
+          isUnnecessary = true;
+        }
+
+        events.push({
+          id: `event-${eventId++}`,
+          type: 'arrived_office',
+          timestamp: arrivalTime.toISOString(),
           address: formatSegmentAddress(segment.EndLocation),
           latitude: segment.EndLocation.Latitude,
           longitude: segment.EndLocation.Longitude,
+          travelMinutes,
+          durationMinutes,
+          isUnnecessary,
         });
-      }
-    } else if (endClassification.type === 'job' && matchedJob) {
-      const isFirstJob = matchedJob.isFirstJob || (!firstJobProcessed && matchedJob.id === firstJob?.id);
 
-      // Check if late
-      let isLate = false;
-      let varianceMinutes: number | undefined;
+        lastArrivalType = 'office';
+        lastArrivalJobId = null;
 
-      if (isFirstJob && matchedJob.scheduledStart) {
-        const scheduledTime = parseISO(matchedJob.scheduledStart);
-        varianceMinutes = Math.round((arrivalTime.getTime() - scheduledTime.getTime()) / 60000);
-        isLate = varianceMinutes > 0;
-
-        if (!firstJobProcessed) {
-          firstJobOnTime = !isLate;
-          firstJobVariance = varianceMinutes;
-          firstJobProcessed = true;
+        // Add departure event if we have duration
+        if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
+          events.push({
+            id: `event-${eventId++}`,
+            type: 'left_office',
+            timestamp: previousDepartureTime.toISOString(),
+            address: formatSegmentAddress(segment.EndLocation),
+            latitude: segment.EndLocation.Latitude,
+            longitude: segment.EndLocation.Longitude,
+          });
+          lastArrivalType = null;
         }
       }
+    } else if (endClassification.type === 'job' && matchedJob) {
+      // Skip if we already have an arrival for this same job and haven't left yet
+      if (lastArrivalType === 'job' && lastArrivalJobId === matchedJob.id) {
+        // Update duration on previous event instead of creating duplicate
+        const lastJobEvent = events.findLast(e => e.type === 'arrived_job' && e.jobId === matchedJob.id);
+        if (lastJobEvent && durationMinutes !== undefined) {
+          lastJobEvent.durationMinutes = (lastJobEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
+        }
+      } else {
+        // Check if this is first time visiting this job
+        const isFirstVisitToJob = !jobsVisited.has(matchedJob.id);
+        const isFirstJob = isFirstVisitToJob && (matchedJob.isFirstJob || (!firstJobProcessed && matchedJob.id === firstJob?.id));
 
-      jobsVisited.add(matchedJob.id);
+        // Check if late - only calculate on first visit
+        let isLate = false;
+        let varianceMinutes: number | undefined;
 
-      events.push({
-        id: `event-${eventId++}`,
-        type: 'arrived_job',
-        timestamp: arrivalTime.toISOString(),
-        address: matchedJob.jobAddress || formatSegmentAddress(segment.EndLocation),
-        latitude: segment.EndLocation.Latitude,
-        longitude: segment.EndLocation.Longitude,
-        jobNumber: matchedJob.jobNumber,
-        jobId: matchedJob.id,
-        customerName: matchedJob.customerName || undefined,
-        scheduledTime: matchedJob.scheduledStart,
-        travelMinutes,
-        durationMinutes,
-        isLate,
-        varianceMinutes,
-        isFirstJob,
-      });
+        if (isFirstJob && matchedJob.scheduledStart && isFirstVisitToJob) {
+          const scheduledTime = parseISO(matchedJob.scheduledStart);
+          varianceMinutes = Math.round((arrivalTime.getTime() - scheduledTime.getTime()) / 60000);
+          isLate = varianceMinutes > 0;
 
-      // Add departure event if we have duration
-      if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
+          if (!firstJobProcessed) {
+            firstJobOnTime = !isLate;
+            firstJobVariance = varianceMinutes;
+            firstJobProcessed = true;
+          }
+        }
+
+        // Mark job as visited BEFORE pushing event
+        jobsVisited.add(matchedJob.id);
+
         events.push({
           id: `event-${eventId++}`,
-          type: 'left_job',
-          timestamp: previousDepartureTime.toISOString(),
+          type: 'arrived_job',
+          timestamp: arrivalTime.toISOString(),
           address: matchedJob.jobAddress || formatSegmentAddress(segment.EndLocation),
           latitude: segment.EndLocation.Latitude,
           longitude: segment.EndLocation.Longitude,
           jobNumber: matchedJob.jobNumber,
           jobId: matchedJob.id,
           customerName: matchedJob.customerName || undefined,
+          scheduledTime: matchedJob.scheduledStart,
+          travelMinutes,
+          durationMinutes,
+          isLate,
+          varianceMinutes,
+          isFirstJob,
         });
+
+        lastArrivalType = 'job';
+        lastArrivalJobId = matchedJob.id;
+
+        // Add departure event if we have duration
+        if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
+          events.push({
+            id: `event-${eventId++}`,
+            type: 'left_job',
+            timestamp: previousDepartureTime.toISOString(),
+            address: matchedJob.jobAddress || formatSegmentAddress(segment.EndLocation),
+            latitude: segment.EndLocation.Latitude,
+            longitude: segment.EndLocation.Longitude,
+            jobNumber: matchedJob.jobNumber,
+            jobId: matchedJob.id,
+            customerName: matchedJob.customerName || undefined,
+          });
+          // Reset last arrival tracking since we left
+          lastArrivalType = null;
+          lastArrivalJobId = null;
+        }
       }
     } else if (endClassification.type === 'custom' && endClassification.customLocation) {
       // Custom labeled location (supply house, gas station, etc.)
