@@ -253,6 +253,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
   // This prevents multiple "Arrived Home" events when GPS registers multiple short segments
   let lastArrivalType: string | null = null;
   let lastArrivalJobId: string | null = null;
+  let lastArrivalCustomId: string | null = null;
 
   // Find first job for late detection
   const firstJob = jobs.find(j => j.isFirstJob) || jobs[0];
@@ -375,6 +376,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         });
         lastArrivalType = 'home';
         lastArrivalJobId = null;
+        lastArrivalCustomId = null;
       }
     } else if (endClassification.type === 'office') {
       // Skip if we're already at office OR we just left office
@@ -412,6 +414,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
 
         lastArrivalType = 'office';
         lastArrivalJobId = null;
+        lastArrivalCustomId = null;
 
         // Add departure event if we have duration
         if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
@@ -481,6 +484,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
 
         lastArrivalType = 'job';
         lastArrivalJobId = matchedJob.id;
+        lastArrivalCustomId = null;
 
         // Add departure event if we have duration
         if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
@@ -504,35 +508,53 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       // Custom labeled location (supply house, gas station, etc.)
       const customLoc = endClassification.customLocation;
 
-      events.push({
-        id: `event-${eventId++}`,
-        type: 'arrived_custom',
-        timestamp: arrivalTime.toISOString(),
-        address: customLoc.address || formatSegmentAddress(segment.EndLocation),
-        latitude: segment.EndLocation.Latitude,
-        longitude: segment.EndLocation.Longitude,
-        travelMinutes,
-        durationMinutes,
-        customLocationId: customLoc.id,
-        customLocationName: customLoc.name,
-        customLocationLogo: customLoc.logoUrl,
-        customLocationCategory: customLoc.category,
-      });
-
-      // Add departure event if we have duration
-      if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
+      // Skip if we already have an arrival for this same custom location OR we just left it
+      const isAtSameCustom = (lastArrivalType === 'custom' || lastArrivalType === 'left_custom') && lastArrivalCustomId === customLoc.id;
+      if (isAtSameCustom) {
+        // Update duration on previous event instead of creating duplicate
+        const lastCustomEvent = events.findLast(e => e.type === 'arrived_custom' && e.customLocationId === customLoc.id);
+        if (lastCustomEvent && durationMinutes !== undefined) {
+          lastCustomEvent.durationMinutes = (lastCustomEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
+        }
+        // Keep tracking this custom location
+      } else {
         events.push({
           id: `event-${eventId++}`,
-          type: 'left_custom',
-          timestamp: previousDepartureTime.toISOString(),
+          type: 'arrived_custom',
+          timestamp: arrivalTime.toISOString(),
           address: customLoc.address || formatSegmentAddress(segment.EndLocation),
           latitude: segment.EndLocation.Latitude,
           longitude: segment.EndLocation.Longitude,
+          travelMinutes,
+          durationMinutes,
           customLocationId: customLoc.id,
           customLocationName: customLoc.name,
           customLocationLogo: customLoc.logoUrl,
           customLocationCategory: customLoc.category,
         });
+
+        lastArrivalType = 'custom';
+        lastArrivalCustomId = customLoc.id;
+        lastArrivalJobId = null;
+
+        // Add departure event if we have duration
+        if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
+          events.push({
+            id: `event-${eventId++}`,
+            type: 'left_custom',
+            timestamp: previousDepartureTime.toISOString(),
+            address: customLoc.address || formatSegmentAddress(segment.EndLocation),
+            latitude: segment.EndLocation.Latitude,
+            longitude: segment.EndLocation.Longitude,
+            customLocationId: customLoc.id,
+            customLocationName: customLoc.name,
+            customLocationLogo: customLoc.logoUrl,
+            customLocationCategory: customLoc.category,
+          });
+          // Mark that we just left this custom location
+          lastArrivalType = 'left_custom';
+          lastArrivalCustomId = customLoc.id;
+        }
       }
     } else if (endClassification.type === 'unknown') {
       // Show unknown stops - these could be lunch, supply house, personal errands, etc.
