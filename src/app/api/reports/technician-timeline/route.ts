@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
         scheduled_start,
         actual_arrival,
         is_first_job_of_day,
+        is_follow_up,
         job_latitude,
         job_longitude,
         status
@@ -121,6 +122,7 @@ export async function GET(req: NextRequest) {
         varianceMinutes,
         isLate,
         isFirstJob: job.is_first_job_of_day || false,
+        isFollowUp: job.is_follow_up || false,
         jobLatitude: job.job_latitude,
         jobLongitude: job.job_longitude,
         status: job.status,

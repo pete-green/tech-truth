@@ -42,6 +42,7 @@ export interface TimelineEvent {
   varianceMinutes?: number;    // How early/late (positive = late)
   isUnnecessary?: boolean;     // For office visits before first job
   isFirstJob?: boolean;        // Mark first job of the day
+  isFollowUp?: boolean;        // Mark follow-up jobs (non-physical phone/admin)
 
   // Custom location info (for arrived_custom/left_custom events)
   customLocationId?: string;

@@ -547,6 +547,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           isLate,
           varianceMinutes,
           isFirstJob,
+          isFollowUp: matchedJob.isFollowUp,
           isManualAssociation,
           manualAssociationId,
         });

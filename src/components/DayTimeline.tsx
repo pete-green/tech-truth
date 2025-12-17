@@ -327,6 +327,13 @@ function TimelineEventCard({
                 </span>
               )}
 
+              {/* Follow-up badge */}
+              {event.isFollowUp && (
+                <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded italic">
+                  Follow-up
+                </span>
+              )}
+
               {/* Late badge */}
               {event.isLate && event.varianceMinutes !== undefined && (
                 <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium">

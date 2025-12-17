@@ -18,6 +18,7 @@ export interface JobDetail {
   varianceMinutes: number | null;
   isLate: boolean;
   isFirstJob: boolean;
+  isFollowUp: boolean;
   jobLatitude: number | null;
   jobLongitude: number | null;
   status: string | null;

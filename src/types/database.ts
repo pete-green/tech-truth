@@ -247,6 +247,7 @@ export type Database = {
           customer_name: string | null
           id: string
           is_first_job_of_day: boolean | null
+          is_follow_up: boolean | null
           job_address: string | null
           job_date: string
           job_latitude: number | null
@@ -267,6 +268,7 @@ export type Database = {
           customer_name?: string | null
           id?: string
           is_first_job_of_day?: boolean | null
+          is_follow_up?: boolean | null
           job_address?: string | null
           job_date: string
           job_latitude?: number | null
@@ -287,6 +289,7 @@ export type Database = {
           customer_name?: string | null
           id?: string
           is_first_job_of_day?: boolean | null
+          is_follow_up?: boolean | null
           job_address?: string | null
           job_date?: string
           job_latitude?: number | null

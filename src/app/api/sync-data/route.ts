@@ -342,6 +342,7 @@ export async function POST(req: NextRequest) {
             job_latitude: jobLat,
             job_longitude: jobLon,
             is_first_job_of_day: isFirstJob,
+            is_follow_up: isFollowUpJob,
             status: appointment.status || 'Scheduled',
             updated_at: new Date().toISOString(),
           }, {
