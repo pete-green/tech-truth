@@ -171,18 +171,22 @@ export async function POST(req: NextRequest) {
         // Step 3b: Get job details for location AND job type
         const jobDetails = await getJob(appointment.jobId);
 
-        // Check if this is a follow-up job type (not an actual on-site visit)
+        // Check if this is a follow-up job type
+        // Follow-up jobs ARE still saved to the database, but don't count as "first job" for arrival tracking
+        let isFollowUpJob = false;
+        let jobTypeName = '';
         if (jobDetails.jobTypeId) {
           const jobType = await getJobTypeWithCache(jobDetails.jobTypeId);
-          if (jobType.isFollowUp) {
-            console.log(`  Skipping follow-up job: ${techData.name} - Job ${appointment.jobId} (${jobType.name})`);
-            // Don't mark as processed - continue looking for first actual on-site job
-            continue;
+          isFollowUpJob = jobType.isFollowUp;
+          jobTypeName = jobType.name;
+          if (isFollowUpJob) {
+            console.log(`  Processing follow-up job: ${techData.name} - Job ${appointment.jobId} (${jobTypeName})`);
           }
         }
 
         // Determine if this is the first job for this technician
-        const isFirstJob = !processedTechFirstJob.has(stTechId);
+        // Follow-up jobs don't count as "first job" for arrival time tracking
+        const isFirstJob = !isFollowUpJob && !processedTechFirstJob.has(stTechId);
 
         // Mark this tech's first job as being processed (only for non-follow-up jobs)
         if (isFirstJob) {
@@ -191,8 +195,8 @@ export async function POST(req: NextRequest) {
           techFirstJobTime.set(techData.id, scheduledTime);
         }
 
-        // If we only want first jobs and this isn't the first, skip
-        if (firstJobOnly && !isFirstJob) {
+        // If we only want first jobs and this isn't the first, skip (but still allow follow-up jobs to be saved)
+        if (firstJobOnly && !isFirstJob && !isFollowUpJob) {
           continue;
         }
 
