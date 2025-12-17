@@ -150,17 +150,368 @@ export async function GET(request: Request) {
 }
 
 /**
- * POST - Sync punch data from Paylocity for a date
- * Logs sync status to sync_logs table for monitoring
+ * Sync punch data for a single date
+ */
+async function syncPunchesForDate(date: string): Promise<{
+  date: string;
+  success: boolean;
+  processed: number;
+  matched: number;
+  violations: number;
+  skipped: number;
+  missingClockOuts: number;
+  clockOutsCreated: number;
+  errors: string[];
+}> {
+  console.log(`Starting punch sync for ${date}...`);
+
+  // Step 1: Fetch technicians with Paylocity IDs and GPS vehicle IDs
+  const { data: technicians, error: techError } = await supabase
+    .from('technicians')
+    .select(`
+      id,
+      name,
+      paylocity_employee_id,
+      takes_truck_home,
+      home_latitude,
+      home_longitude,
+      verizon_vehicle_id
+    `)
+    .not('paylocity_employee_id', 'is', null);
+
+  if (techError) {
+    throw new Error(`Failed to fetch technicians: ${techError.message}`);
+  }
+
+  console.log(`Found ${technicians?.length || 0} technicians with Paylocity IDs`);
+
+  // Create lookup by Paylocity employee ID
+  const techByPaylocityId = new Map(
+    technicians?.map(t => [t.paylocity_employee_id, t]) || []
+  );
+
+  // Step 2: Fetch punch data from Paylocity
+  const startDate = `${date}T00:00:00`;
+  const endDate = `${date}T23:59:59`;
+  const punches = await getCompanyPunchDetails(startDate, endDate);
+
+  console.log(`Fetched ${punches.length} punch records from Paylocity`);
+
+  // Pre-process: Find the first clock-in and last clock-out time for each employee
+  const firstClockInByEmployee = new Map<string, string>();
+  const lastClockOutByEmployee = new Map<string, string>();
+  for (const punch of punches) {
+    if (punch.clockInTime) {
+      const existing = firstClockInByEmployee.get(punch.employeeId);
+      if (!existing || punch.clockInTime < existing) {
+        firstClockInByEmployee.set(punch.employeeId, punch.clockInTime);
+      }
+    }
+    if (punch.clockOutTime) {
+      const existing = lastClockOutByEmployee.get(punch.employeeId);
+      if (!existing || punch.clockOutTime > existing) {
+        lastClockOutByEmployee.set(punch.employeeId, punch.clockOutTime);
+      }
+    }
+  }
+
+  // Step 3: Fetch custom locations
+  const { data: customLocations } = await supabase
+    .from('custom_locations')
+    .select('*');
+
+  // Step 4: Fetch excused office visits for the date
+  const { data: excusedVisits } = await supabase
+    .from('excused_office_visits')
+    .select('technician_id')
+    .eq('visit_date', date);
+
+  const excusedTechIds = new Set(excusedVisits?.map(v => v.technician_id) || []);
+
+  // Step 5: Fetch jobs for the date to get job locations
+  const { data: jobs } = await supabase
+    .from('jobs')
+    .select('job_date, latitude, longitude, address')
+    .eq('job_date', date)
+    .not('latitude', 'is', null);
+
+  const jobLocations = jobs?.map(j => ({
+    lat: j.latitude,
+    lon: j.longitude,
+    address: j.address,
+  })) || [];
+
+  // Step 6: Process each punch and correlate with GPS
+  const results = {
+    date,
+    success: true,
+    processed: 0,
+    matched: 0,
+    violations: 0,
+    skipped: 0,
+    missingClockOuts: 0,
+    clockOutsCreated: 0,
+    errors: [] as string[],
+  };
+
+  for (const punch of punches) {
+    try {
+      // Find technician for this Paylocity employee
+      const tech = techByPaylocityId.get(punch.employeeId);
+      if (!tech) {
+        results.skipped++;
+        continue;
+      }
+
+      // Skip if no GPS vehicle
+      if (!tech.verizon_vehicle_id) {
+        results.skipped++;
+        continue;
+      }
+
+      results.matched++;
+
+      // Check if this is a meal/break segment
+      const punchTypeLower = punch.punchType?.toLowerCase() || '';
+      const isMealSegment = punchTypeLower === 'lunch' || punchTypeLower === 'break';
+
+      // Fetch GPS history for this technician's vehicle
+      let gpsHistory: GPSHistoryPoint[] = [];
+      try {
+        const nextDate = new Date(date);
+        nextDate.setDate(nextDate.getDate() + 1);
+        const nextDateStr = nextDate.toISOString().split('T')[0];
+
+        gpsHistory = await getVehicleGPSHistory(
+          tech.verizon_vehicle_id,
+          `${date}T09:00:00.000Z`,
+          `${nextDateStr}T10:00:00.000Z`
+        );
+      } catch (gpsError) {
+        console.warn(`GPS history fetch failed for ${tech.name}: ${gpsError}`);
+      }
+
+      // Determine GPS location at clock-in time
+      let gpsAtClockIn: { latitude: number; longitude: number; address: string; timestamp: Date } | null = null;
+      let clockInLocationType = 'no_gps';
+
+      if (punch.clockInTime && gpsHistory.length > 0) {
+        const clockInEastern = toEasternTimestamp(punch.clockInTime);
+        const clockInDate = new Date(clockInEastern!);
+        gpsAtClockIn = findLocationFromGPSHistory(gpsHistory, clockInDate);
+
+        if (gpsAtClockIn) {
+          const homeLocation = tech.home_latitude && tech.home_longitude
+            ? { lat: tech.home_latitude, lon: tech.home_longitude }
+            : null;
+
+          clockInLocationType = determineLocationType(
+            gpsAtClockIn.latitude,
+            gpsAtClockIn.longitude,
+            OFFICE_LOCATION,
+            homeLocation,
+            customLocations || [],
+            jobLocations
+          );
+        }
+      }
+
+      // Check for clock-in violation
+      let isViolation = false;
+      let violationReason: string | null = null;
+      let canBeExcused = false;
+      let expectedLocationType = tech.takes_truck_home ? 'job' : 'office';
+      const hasExcusedVisit = excusedTechIds.has(tech.id);
+
+      const firstClockIn = firstClockInByEmployee.get(punch.employeeId);
+      const isFirstClockIn = firstClockIn === punch.clockInTime;
+
+      if (!isMealSegment && clockInLocationType !== 'no_gps' && clockInLocationType !== 'unknown') {
+        if (tech.takes_truck_home) {
+          if (isFirstClockIn && clockInLocationType === 'home') {
+            isViolation = true;
+            violationReason = 'Clocked in at HOME instead of job site';
+            canBeExcused = false;
+          } else if (isFirstClockIn && clockInLocationType === 'office' && !hasExcusedVisit) {
+            isViolation = true;
+            violationReason = 'Clocked in at OFFICE - should go direct to job';
+            canBeExcused = true;
+          }
+        } else {
+          if (isFirstClockIn && clockInLocationType !== 'office') {
+            isViolation = true;
+            violationReason = `Clocked in at ${clockInLocationType.toUpperCase()} instead of office`;
+            canBeExcused = false;
+          }
+        }
+      }
+
+      if (isViolation) results.violations++;
+
+      const clockInTimestamp = toEasternTimestamp(punch.clockInTime);
+      const clockOutTimestamp = toEasternTimestamp(punch.clockOutTime);
+
+      if (clockInTimestamp && !clockOutTimestamp) {
+        results.missingClockOuts++;
+      }
+
+      // Upsert ClockIn record
+      const punchInType = isMealSegment ? 'MealStart' : 'ClockIn';
+      const { error: clockInError } = await supabase
+        .from('punch_records')
+        .upsert({
+          technician_id: tech.id,
+          paylocity_employee_id: punch.employeeId,
+          punch_date: punch.punchDate,
+          punch_time: clockInTimestamp,
+          punch_type: punchInType,
+          gps_latitude: gpsAtClockIn?.latitude,
+          gps_longitude: gpsAtClockIn?.longitude,
+          gps_address: gpsAtClockIn?.address,
+          gps_location_type: clockInLocationType,
+          gps_timestamp: gpsAtClockIn?.timestamp?.toISOString(),
+          gps_distance_from_punch_feet: 0,
+          is_violation: isViolation,
+          violation_reason: violationReason,
+          expected_location_type: expectedLocationType,
+          can_be_excused: canBeExcused,
+          clock_in_time: clockInTimestamp,
+          clock_out_time: clockOutTimestamp,
+          duration_hours: punch.durationHours,
+          origin: punch.origin,
+          cost_center_name: punch.costCenterName,
+        }, {
+          onConflict: 'paylocity_employee_id,punch_time,punch_type',
+        });
+
+      if (clockInError) {
+        results.errors.push(`${tech.name} ClockIn: ${clockInError.message}`);
+      } else {
+        results.processed++;
+      }
+
+      // Create separate ClockOut record if clock-out time exists
+      const punchOutType = isMealSegment ? 'MealEnd' : 'ClockOut';
+      if (clockOutTimestamp) {
+        let gpsAtClockOut: { latitude: number; longitude: number; address: string; timestamp: Date } | null = null;
+        let clockOutLocationType = 'no_gps';
+
+        if (gpsHistory.length > 0) {
+          const clockOutEastern = toEasternTimestamp(punch.clockOutTime!);
+          const clockOutDate = new Date(clockOutEastern!);
+          gpsAtClockOut = findLocationFromGPSHistory(gpsHistory, clockOutDate);
+
+          if (gpsAtClockOut) {
+            const homeLocation = tech.home_latitude && tech.home_longitude
+              ? { lat: tech.home_latitude, lon: tech.home_longitude }
+              : null;
+
+            clockOutLocationType = determineLocationType(
+              gpsAtClockOut.latitude,
+              gpsAtClockOut.longitude,
+              OFFICE_LOCATION,
+              homeLocation,
+              customLocations || [],
+              jobLocations
+            );
+          }
+        }
+
+        let clockOutViolation = false;
+        let clockOutViolationReason: string | null = null;
+
+        const lastClockOut = lastClockOutByEmployee.get(punch.employeeId);
+        const isLastClockOut = lastClockOut === punch.clockOutTime;
+
+        if (!isMealSegment && clockOutLocationType !== 'no_gps' && clockOutLocationType !== 'unknown') {
+          if (isLastClockOut && tech.takes_truck_home && clockOutLocationType === 'home') {
+            clockOutViolation = true;
+            clockOutViolationReason = 'Clocked out at HOME - should clock out when leaving last job';
+          }
+        }
+
+        if (clockOutViolation) results.violations++;
+
+        const { error: clockOutError } = await supabase
+          .from('punch_records')
+          .upsert({
+            technician_id: tech.id,
+            paylocity_employee_id: punch.employeeId,
+            punch_date: punch.punchDate,
+            punch_time: clockOutTimestamp,
+            punch_type: punchOutType,
+            gps_latitude: gpsAtClockOut?.latitude,
+            gps_longitude: gpsAtClockOut?.longitude,
+            gps_address: gpsAtClockOut?.address,
+            gps_location_type: clockOutLocationType,
+            gps_timestamp: gpsAtClockOut?.timestamp?.toISOString(),
+            gps_distance_from_punch_feet: 0,
+            is_violation: clockOutViolation,
+            violation_reason: clockOutViolationReason,
+            expected_location_type: tech.takes_truck_home ? 'job' : 'office',
+            can_be_excused: false,
+            clock_in_time: clockInTimestamp,
+            clock_out_time: clockOutTimestamp,
+            duration_hours: punch.durationHours,
+            origin: punch.origin,
+            cost_center_name: punch.costCenterName,
+          }, {
+            onConflict: 'paylocity_employee_id,punch_time,punch_type',
+          });
+
+        if (clockOutError) {
+          results.errors.push(`${tech.name} ClockOut: ${clockOutError.message}`);
+        } else {
+          results.clockOutsCreated++;
+        }
+      }
+    } catch (punchError) {
+      results.errors.push(`Processing error: ${punchError}`);
+    }
+  }
+
+  console.log(`Punch sync for ${date} complete: ${JSON.stringify(results)}`);
+  return results;
+}
+
+/**
+ * POST - Sync punch data from Paylocity for one or more dates
+ *
+ * Request body options:
+ * - date: string (optional) - Specific date to sync (YYYY-MM-DD). Defaults to today.
+ * - days: number (optional) - Number of recent days to sync (1-14). Defaults to 1.
+ *   When days > 1, syncs from today going back that many days.
+ *   This catches clock-outs that were recorded after the previous day's sync.
+ *
+ * Examples:
+ * - { } - Syncs today only (backwards compatible)
+ * - { "date": "2025-12-15" } - Syncs specific date only
+ * - { "days": 2 } - Syncs today and yesterday
+ * - { "days": 3 } - Syncs today, yesterday, and day before
  */
 export async function POST(request: Request) {
   let syncLogId: string | null = null;
 
   try {
     const body = await request.json();
-    const date = body.date || new Date().toISOString().split('T')[0];
+    const days = Math.min(Math.max(body.days || 1, 1), 14); // Clamp between 1 and 14
+    const specificDate = body.date;
 
-    console.log(`Starting punch sync for ${date}...`);
+    // Build list of dates to sync
+    const datesToSync: string[] = [];
+    if (specificDate) {
+      // Single specific date requested
+      datesToSync.push(specificDate);
+    } else {
+      // Sync multiple recent days (today going backwards)
+      for (let i = 0; i < days; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        datesToSync.push(d.toISOString().split('T')[0]);
+      }
+    }
+
+    console.log(`Starting punch sync for ${datesToSync.length} day(s): ${datesToSync.join(', ')}`);
 
     // Create sync log entry
     const { data: syncLog, error: syncLogError } = await supabase
@@ -180,337 +531,61 @@ export async function POST(request: Request) {
       syncLogId = syncLog.id;
     }
 
-    // Step 1: Fetch technicians with Paylocity IDs and GPS vehicle IDs
-    const { data: technicians, error: techError } = await supabase
-      .from('technicians')
-      .select(`
-        id,
-        name,
-        paylocity_employee_id,
-        takes_truck_home,
-        home_latitude,
-        home_longitude,
-        verizon_vehicle_id
-      `)
-      .not('paylocity_employee_id', 'is', null);
+    // Sync each date
+    const allResults: Array<{
+      date: string;
+      success: boolean;
+      processed: number;
+      matched: number;
+      violations: number;
+      skipped: number;
+      missingClockOuts: number;
+      clockOutsCreated: number;
+      errors: string[];
+    }> = [];
 
-    if (techError) {
-      throw new Error(`Failed to fetch technicians: ${techError.message}`);
+    for (const dateToSync of datesToSync) {
+      try {
+        const result = await syncPunchesForDate(dateToSync);
+        allResults.push(result);
+      } catch (error) {
+        allResults.push({
+          date: dateToSync,
+          success: false,
+          processed: 0,
+          matched: 0,
+          violations: 0,
+          skipped: 0,
+          missingClockOuts: 0,
+          clockOutsCreated: 0,
+          errors: [error instanceof Error ? error.message : 'Unknown error'],
+        });
+      }
     }
 
-    console.log(`Found ${technicians?.length || 0} technicians with Paylocity IDs`);
-
-    // Create lookup by Paylocity employee ID
-    const techByPaylocityId = new Map(
-      technicians?.map(t => [t.paylocity_employee_id, t]) || []
+    // Calculate totals across all days
+    const totals = allResults.reduce(
+      (acc, r) => ({
+        processed: acc.processed + r.processed,
+        matched: acc.matched + r.matched,
+        violations: acc.violations + r.violations,
+        skipped: acc.skipped + r.skipped,
+        missingClockOuts: acc.missingClockOuts + r.missingClockOuts,
+        clockOutsCreated: acc.clockOutsCreated + r.clockOutsCreated,
+        errors: [...acc.errors, ...r.errors],
+      }),
+      {
+        processed: 0,
+        matched: 0,
+        violations: 0,
+        skipped: 0,
+        missingClockOuts: 0,
+        clockOutsCreated: 0,
+        errors: [] as string[],
+      }
     );
 
-    // Step 2: Fetch punch data from Paylocity
-    const startDate = `${date}T00:00:00`;
-    const endDate = `${date}T23:59:59`;
-    const punches = await getCompanyPunchDetails(startDate, endDate);
-
-    console.log(`Fetched ${punches.length} punch records from Paylocity`);
-
-    // Pre-process: Find the first clock-in and last clock-out time for each employee
-    // This helps us identify lunch breaks vs start/end-of-day punches
-    const firstClockInByEmployee = new Map<string, string>();
-    const lastClockOutByEmployee = new Map<string, string>();
-    for (const punch of punches) {
-      if (punch.clockInTime) {
-        const existing = firstClockInByEmployee.get(punch.employeeId);
-        if (!existing || punch.clockInTime < existing) {
-          firstClockInByEmployee.set(punch.employeeId, punch.clockInTime);
-        }
-      }
-      if (punch.clockOutTime) {
-        const existing = lastClockOutByEmployee.get(punch.employeeId);
-        if (!existing || punch.clockOutTime > existing) {
-          lastClockOutByEmployee.set(punch.employeeId, punch.clockOutTime);
-        }
-      }
-    }
-
-    // Step 3: Fetch custom locations
-    const { data: customLocations } = await supabase
-      .from('custom_locations')
-      .select('*');
-
-    // Step 4: Fetch excused office visits for the date
-    const { data: excusedVisits } = await supabase
-      .from('excused_office_visits')
-      .select('technician_id')
-      .eq('visit_date', date);
-
-    const excusedTechIds = new Set(excusedVisits?.map(v => v.technician_id) || []);
-
-    // Step 5: Fetch jobs for the date to get job locations
-    const { data: jobs } = await supabase
-      .from('jobs')
-      .select('job_date, latitude, longitude, address')
-      .eq('job_date', date)
-      .not('latitude', 'is', null);
-
-    const jobLocations = jobs?.map(j => ({
-      lat: j.latitude,
-      lon: j.longitude,
-      address: j.address,
-    })) || [];
-
-    // Step 6: Process each punch and correlate with GPS
-    const results = {
-      processed: 0,
-      matched: 0,
-      violations: 0,
-      skipped: 0,
-      missingClockOuts: 0,
-      clockOutsCreated: 0,
-      errors: [] as string[],
-    };
-
-    for (const punch of punches) {
-      try {
-        // Find technician for this Paylocity employee
-        const tech = techByPaylocityId.get(punch.employeeId);
-        if (!tech) {
-          results.skipped++;
-          continue;
-        }
-
-        // Skip if no GPS vehicle
-        if (!tech.verizon_vehicle_id) {
-          results.skipped++;
-          continue;
-        }
-
-        results.matched++;
-
-        // Check if this is a meal/break segment - handle differently
-        // Paylocity uses 'lunch' and 'break' as punchTypes, not 'meal'
-        const punchTypeLower = punch.punchType?.toLowerCase() || '';
-        const isMealSegment = punchTypeLower === 'lunch' || punchTypeLower === 'break';
-
-        // Fetch GPS history for this technician's vehicle
-        // Uses the breadcrumb trail API which gives actual location at each time point
-        // Query window: 4 AM EST (9 AM UTC) to 5 AM EST next day (10 AM UTC)
-        let gpsHistory: GPSHistoryPoint[] = [];
-        try {
-          const nextDate = new Date(date);
-          nextDate.setDate(nextDate.getDate() + 1);
-          const nextDateStr = nextDate.toISOString().split('T')[0];
-
-          gpsHistory = await getVehicleGPSHistory(
-            tech.verizon_vehicle_id,
-            `${date}T09:00:00.000Z`,  // 4 AM EST = 9 AM UTC
-            `${nextDateStr}T10:00:00.000Z`  // 5 AM EST next day = 10 AM UTC
-          );
-        } catch (gpsError) {
-          console.warn(`GPS history fetch failed for ${tech.name}: ${gpsError}`);
-        }
-
-        // Determine GPS location at clock-in time using actual GPS breadcrumb data
-        let gpsAtClockIn: { latitude: number; longitude: number; address: string; timestamp: Date } | null = null;
-        let clockInLocationType = 'no_gps';
-
-        if (punch.clockInTime && gpsHistory.length > 0) {
-          // Convert Paylocity Eastern time to UTC for comparison
-          const clockInEastern = toEasternTimestamp(punch.clockInTime);
-          const clockInDate = new Date(clockInEastern!);
-          gpsAtClockIn = findLocationFromGPSHistory(gpsHistory, clockInDate);
-
-          if (gpsAtClockIn) {
-            const homeLocation = tech.home_latitude && tech.home_longitude
-              ? { lat: tech.home_latitude, lon: tech.home_longitude }
-              : null;
-
-            clockInLocationType = determineLocationType(
-              gpsAtClockIn.latitude,
-              gpsAtClockIn.longitude,
-              OFFICE_LOCATION,
-              homeLocation,
-              customLocations || [],
-              jobLocations
-            );
-          }
-        }
-
-        // Check for clock-in violation
-        // Only flag as violation if this is the FIRST clock-in of the day (not returning from lunch)
-        // Skip violation checks for meal segments entirely
-        let isViolation = false;
-        let violationReason: string | null = null;
-        let canBeExcused = false;
-        let expectedLocationType = tech.takes_truck_home ? 'job' : 'office';
-        const hasExcusedVisit = excusedTechIds.has(tech.id);
-
-        // Check if this is the first clock-in of the day for this employee
-        const firstClockIn = firstClockInByEmployee.get(punch.employeeId);
-        const isFirstClockIn = firstClockIn === punch.clockInTime;
-
-        // Skip violation checks for meal segments
-        if (!isMealSegment && clockInLocationType !== 'no_gps' && clockInLocationType !== 'unknown') {
-          if (tech.takes_truck_home) {
-            // Only check for violations on the FIRST clock-in (start of day)
-            // Mid-day clock-ins (returning from lunch) are not violations
-            if (isFirstClockIn && clockInLocationType === 'home') {
-              isViolation = true;
-              violationReason = 'Clocked in at HOME instead of job site';
-              canBeExcused = false;
-            } else if (isFirstClockIn && clockInLocationType === 'office' && !hasExcusedVisit) {
-              isViolation = true;
-              violationReason = 'Clocked in at OFFICE - should go direct to job';
-              canBeExcused = true; // Office visits can be excused
-            }
-          } else {
-            // Should be at office - only check on first clock-in
-            if (isFirstClockIn && clockInLocationType !== 'office') {
-              isViolation = true;
-              violationReason = `Clocked in at ${clockInLocationType.toUpperCase()} instead of office`;
-              canBeExcused = false;
-            }
-          }
-        }
-
-        if (isViolation) results.violations++;
-
-        // Convert Paylocity local times to proper Eastern timestamps
-        const clockInTimestamp = toEasternTimestamp(punch.clockInTime);
-        const clockOutTimestamp = toEasternTimestamp(punch.clockOutTime);
-
-        // Track missing clock-outs
-        if (clockInTimestamp && !clockOutTimestamp) {
-          results.missingClockOuts++;
-        }
-
-        // Upsert ClockIn record (or MealStart for meal segments)
-        // Note: We use paylocity_employee_id,punch_time,punch_type as the conflict key
-        // This allows a ClockOut and ClockIn at the same time (e.g., lunch break end/start)
-        // For meal segments: clockInTime = when they went to lunch = MealStart
-        const punchInType = isMealSegment ? 'MealStart' : 'ClockIn';
-        const { error: clockInError } = await supabase
-          .from('punch_records')
-          .upsert({
-            technician_id: tech.id,
-            paylocity_employee_id: punch.employeeId,
-            punch_date: punch.punchDate,
-            punch_time: clockInTimestamp,
-            punch_type: punchInType,
-            gps_latitude: gpsAtClockIn?.latitude,
-            gps_longitude: gpsAtClockIn?.longitude,
-            gps_address: gpsAtClockIn?.address,
-            gps_location_type: clockInLocationType,
-            gps_timestamp: gpsAtClockIn?.timestamp?.toISOString(),
-            gps_distance_from_punch_feet: 0, // Exact location from GPS history
-            is_violation: isViolation,
-            violation_reason: violationReason,
-            expected_location_type: expectedLocationType,
-            can_be_excused: canBeExcused,
-            clock_in_time: clockInTimestamp,
-            clock_out_time: clockOutTimestamp,
-            duration_hours: punch.durationHours,
-            origin: punch.origin,
-            cost_center_name: punch.costCenterName,
-          }, {
-            onConflict: 'paylocity_employee_id,punch_time,punch_type',
-          });
-
-        if (clockInError) {
-          results.errors.push(`${tech.name} ClockIn: ${clockInError.message}`);
-        } else {
-          results.processed++;
-        }
-
-        // Create separate ClockOut record (or MealEnd for meal segments) if clock-out time exists
-        // For meal segments: clockOutTime = when they came back from lunch = MealEnd
-        const punchOutType = isMealSegment ? 'MealEnd' : 'ClockOut';
-        if (clockOutTimestamp) {
-          // Get GPS location at clock-out time using actual GPS breadcrumb data
-          let gpsAtClockOut: { latitude: number; longitude: number; address: string; timestamp: Date } | null = null;
-          let clockOutLocationType = 'no_gps';
-
-          if (gpsHistory.length > 0) {
-            // Convert Paylocity Eastern time to UTC for comparison
-            const clockOutEastern = toEasternTimestamp(punch.clockOutTime!);
-            const clockOutDate = new Date(clockOutEastern!);
-            gpsAtClockOut = findLocationFromGPSHistory(gpsHistory, clockOutDate);
-
-            if (gpsAtClockOut) {
-              const homeLocation = tech.home_latitude && tech.home_longitude
-                ? { lat: tech.home_latitude, lon: tech.home_longitude }
-                : null;
-
-              clockOutLocationType = determineLocationType(
-                gpsAtClockOut.latitude,
-                gpsAtClockOut.longitude,
-                OFFICE_LOCATION,
-                homeLocation,
-                customLocations || [],
-                jobLocations
-              );
-            }
-          }
-
-          // Check for clock-out violations (clocking out at home instead of job/office)
-          // Only flag as violation if this is the LAST clock-out of the day (not a lunch break)
-          // Skip violation checks for meal segments entirely
-          let clockOutViolation = false;
-          let clockOutViolationReason: string | null = null;
-
-          // Check if this is the last clock-out of the day for this employee
-          const lastClockOut = lastClockOutByEmployee.get(punch.employeeId);
-          const isLastClockOut = lastClockOut === punch.clockOutTime;
-
-          // Skip violation checks for meal segments
-          if (!isMealSegment && clockOutLocationType !== 'no_gps' && clockOutLocationType !== 'unknown') {
-            // Only check for violations on the LAST clock-out (end of day)
-            // Mid-day clock-outs (lunch breaks) are not violations
-            if (isLastClockOut && tech.takes_truck_home && clockOutLocationType === 'home') {
-              clockOutViolation = true;
-              clockOutViolationReason = 'Clocked out at HOME - should clock out when leaving last job';
-            }
-          }
-
-          if (clockOutViolation) results.violations++;
-
-          const { error: clockOutError } = await supabase
-            .from('punch_records')
-            .upsert({
-              technician_id: tech.id,
-              paylocity_employee_id: punch.employeeId,
-              punch_date: punch.punchDate,
-              punch_time: clockOutTimestamp,
-              punch_type: punchOutType,
-              gps_latitude: gpsAtClockOut?.latitude,
-              gps_longitude: gpsAtClockOut?.longitude,
-              gps_address: gpsAtClockOut?.address,
-              gps_location_type: clockOutLocationType,
-              gps_timestamp: gpsAtClockOut?.timestamp?.toISOString(),
-              gps_distance_from_punch_feet: 0,
-              is_violation: clockOutViolation,
-              violation_reason: clockOutViolationReason,
-              expected_location_type: tech.takes_truck_home ? 'job' : 'office',
-              can_be_excused: false,
-              clock_in_time: clockInTimestamp,
-              clock_out_time: clockOutTimestamp,
-              duration_hours: punch.durationHours,
-              origin: punch.origin,
-              cost_center_name: punch.costCenterName,
-            }, {
-              onConflict: 'paylocity_employee_id,punch_time,punch_type',
-            });
-
-          if (clockOutError) {
-            results.errors.push(`${tech.name} ClockOut: ${clockOutError.message}`);
-          } else {
-            results.clockOutsCreated++;
-          }
-        }
-      } catch (punchError) {
-        results.errors.push(`Processing error: ${punchError}`);
-      }
-    }
-
-    console.log(`Punch sync complete: ${JSON.stringify(results)}`);
+    console.log(`Multi-day punch sync complete: ${JSON.stringify(totals)}`);
 
     // Update sync log with success
     if (syncLogId) {
@@ -518,18 +593,31 @@ export async function POST(request: Request) {
         .from('sync_logs')
         .update({
           status: 'completed',
-          records_processed: results.processed,
-          errors: results.errors.length > 0 ? results.errors : null,
+          records_processed: totals.processed,
+          errors: totals.errors.length > 0 ? totals.errors : null,
           completed_at: new Date().toISOString(),
         })
         .eq('id', syncLogId);
     }
 
-    return NextResponse.json({
-      success: true,
-      date,
-      ...results,
-    });
+    // Return results - backwards compatible format for single day, enhanced for multi-day
+    if (datesToSync.length === 1) {
+      // Single day: backwards compatible response
+      return NextResponse.json({
+        success: true,
+        date: datesToSync[0],
+        ...totals,
+      });
+    } else {
+      // Multi-day: include per-day breakdown
+      return NextResponse.json({
+        success: true,
+        days: datesToSync.length,
+        dates: datesToSync,
+        totals,
+        results: allResults,
+      });
+    }
   } catch (error) {
     console.error('Error syncing punch data:', error);
 
