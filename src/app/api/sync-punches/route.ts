@@ -285,6 +285,9 @@ export async function POST(request: Request) {
 
         results.matched++;
 
+        // Check if this is a meal segment - handle differently
+        const isMealSegment = punch.punchType?.toLowerCase() === 'meal';
+
         // Fetch GPS history for this technician's vehicle
         // Uses the breadcrumb trail API which gives actual location at each time point
         // Query window: 4 AM EST (9 AM UTC) to 5 AM EST next day (10 AM UTC)
@@ -331,6 +334,7 @@ export async function POST(request: Request) {
 
         // Check for clock-in violation
         // Only flag as violation if this is the FIRST clock-in of the day (not returning from lunch)
+        // Skip violation checks for meal segments entirely
         let isViolation = false;
         let violationReason: string | null = null;
         let canBeExcused = false;
@@ -341,7 +345,8 @@ export async function POST(request: Request) {
         const firstClockIn = firstClockInByEmployee.get(punch.employeeId);
         const isFirstClockIn = firstClockIn === punch.clockInTime;
 
-        if (clockInLocationType !== 'no_gps' && clockInLocationType !== 'unknown') {
+        // Skip violation checks for meal segments
+        if (!isMealSegment && clockInLocationType !== 'no_gps' && clockInLocationType !== 'unknown') {
           if (tech.takes_truck_home) {
             // Only check for violations on the FIRST clock-in (start of day)
             // Mid-day clock-ins (returning from lunch) are not violations
@@ -375,9 +380,11 @@ export async function POST(request: Request) {
           results.missingClockOuts++;
         }
 
-        // Upsert ClockIn record
+        // Upsert ClockIn record (or MealStart for meal segments)
         // Note: We use paylocity_employee_id,punch_time,punch_type as the conflict key
         // This allows a ClockOut and ClockIn at the same time (e.g., lunch break end/start)
+        // For meal segments: clockInTime = when they went to lunch = MealStart
+        const punchInType = isMealSegment ? 'MealStart' : 'ClockIn';
         const { error: clockInError } = await supabase
           .from('punch_records')
           .upsert({
@@ -385,7 +392,7 @@ export async function POST(request: Request) {
             paylocity_employee_id: punch.employeeId,
             punch_date: punch.punchDate,
             punch_time: clockInTimestamp,
-            punch_type: 'ClockIn',
+            punch_type: punchInType,
             gps_latitude: gpsAtClockIn?.latitude,
             gps_longitude: gpsAtClockIn?.longitude,
             gps_address: gpsAtClockIn?.address,
@@ -411,7 +418,9 @@ export async function POST(request: Request) {
           results.processed++;
         }
 
-        // Create separate ClockOut record if clock-out time exists
+        // Create separate ClockOut record (or MealEnd for meal segments) if clock-out time exists
+        // For meal segments: clockOutTime = when they came back from lunch = MealEnd
+        const punchOutType = isMealSegment ? 'MealEnd' : 'ClockOut';
         if (clockOutTimestamp) {
           // Get GPS location at clock-out time using actual GPS breadcrumb data
           let gpsAtClockOut: { latitude: number; longitude: number; address: string; timestamp: Date } | null = null;
@@ -441,6 +450,7 @@ export async function POST(request: Request) {
 
           // Check for clock-out violations (clocking out at home instead of job/office)
           // Only flag as violation if this is the LAST clock-out of the day (not a lunch break)
+          // Skip violation checks for meal segments entirely
           let clockOutViolation = false;
           let clockOutViolationReason: string | null = null;
 
@@ -448,7 +458,8 @@ export async function POST(request: Request) {
           const lastClockOut = lastClockOutByEmployee.get(punch.employeeId);
           const isLastClockOut = lastClockOut === punch.clockOutTime;
 
-          if (clockOutLocationType !== 'no_gps' && clockOutLocationType !== 'unknown') {
+          // Skip violation checks for meal segments
+          if (!isMealSegment && clockOutLocationType !== 'no_gps' && clockOutLocationType !== 'unknown') {
             // Only check for violations on the LAST clock-out (end of day)
             // Mid-day clock-outs (lunch breaks) are not violations
             if (isLastClockOut && tech.takes_truck_home && clockOutLocationType === 'home') {
@@ -466,7 +477,7 @@ export async function POST(request: Request) {
               paylocity_employee_id: punch.employeeId,
               punch_date: punch.punchDate,
               punch_time: clockOutTimestamp,
-              punch_type: 'ClockOut',
+              punch_type: punchOutType,
               gps_latitude: gpsAtClockOut?.latitude,
               gps_longitude: gpsAtClockOut?.longitude,
               gps_address: gpsAtClockOut?.address,
