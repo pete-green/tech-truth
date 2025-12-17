@@ -22,11 +22,21 @@ async function getToken(): Promise<string> {
     return cachedToken.token;
   }
 
+  // Validate credentials are present
+  if (!PAYLOCITY_CONFIG.clientId || !PAYLOCITY_CONFIG.clientSecret) {
+    const missing = [];
+    if (!PAYLOCITY_CONFIG.clientId) missing.push('PAYLOCITY_NG_CLIENT_ID');
+    if (!PAYLOCITY_CONFIG.clientSecret) missing.push('PAYLOCITY_NG_CLIENT_SECRET');
+    throw new Error(`Paylocity credentials missing: ${missing.join(', ')}. Check environment variables.`);
+  }
+
   // Paylocity requires credentials in body, not header
   const params = new URLSearchParams();
   params.append('client_id', PAYLOCITY_CONFIG.clientId);
   params.append('client_secret', PAYLOCITY_CONFIG.clientSecret);
   params.append('grant_type', 'client_credentials');
+
+  console.log(`Paylocity auth attempt - clientId length: ${PAYLOCITY_CONFIG.clientId.length}, authUrl: ${PAYLOCITY_CONFIG.authUrl}`);
 
   const response = await fetch(PAYLOCITY_CONFIG.authUrl, {
     method: 'POST',
@@ -38,6 +48,7 @@ async function getToken(): Promise<string> {
 
   if (!response.ok) {
     const text = await response.text();
+    console.error(`Paylocity auth failed - status: ${response.status}, clientId length: ${PAYLOCITY_CONFIG.clientId.length}`);
     throw new Error(`Paylocity auth failed: ${response.status} - ${text}`);
   }
 

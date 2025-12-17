@@ -24,6 +24,7 @@ import DayTimelineComponent from '@/components/DayTimeline';
 import SimpleMapModal from '@/components/SimpleMapModal';
 import LabelLocationModal from '@/components/LabelLocationModal';
 import ViolationsPanel, { Violation } from '@/components/ViolationsPanel';
+import DataStatusCard from '@/components/DataStatusCard';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 import { LocationCategory, BoundaryType } from '@/types/custom-location';
 
@@ -625,6 +626,16 @@ export default function StopDetailsPage() {
               </div>
             </div>
           </div>
+
+          {/* Data Status Card - Shows punch data availability and sync status */}
+          {startDate === endDate && selectedTech && (
+            <DataStatusCard
+              technicianId={selectedTechId}
+              technicianName={selectedTech.name}
+              date={startDate}
+              onRefresh={fetchTimelines}
+            />
+          )}
 
           {/* Time Breakdown Cards */}
           <div className="mb-6">

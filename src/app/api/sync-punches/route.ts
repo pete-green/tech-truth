@@ -116,11 +116,31 @@ export async function GET(request: Request) {
  * POST - Sync punch data from Paylocity for a date
  */
 export async function POST(request: Request) {
+  let syncLogId: string | null = null;
+
   try {
     const body = await request.json();
     const date = body.date || new Date().toISOString().split('T')[0];
 
     console.log(`Starting punch sync for ${date}...`);
+
+    // Create sync log entry
+    const { data: syncLog, error: syncLogError } = await supabase
+      .from('sync_logs')
+      .insert({
+        sync_type: 'paylocity_punches',
+        status: 'running',
+        records_processed: 0,
+        started_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+
+    if (syncLogError) {
+      console.warn('Failed to create sync log:', syncLogError);
+    } else {
+      syncLogId = syncLog.id;
+    }
 
     // Step 1: Fetch technicians with Paylocity IDs and GPS vehicle IDs
     const { data: technicians, error: techError } = await supabase
@@ -400,6 +420,19 @@ export async function POST(request: Request) {
 
     console.log(`Punch sync complete: ${JSON.stringify(results)}`);
 
+    // Update sync log with success
+    if (syncLogId) {
+      await supabase
+        .from('sync_logs')
+        .update({
+          status: 'completed',
+          records_processed: results.processed,
+          errors: results.errors.length > 0 ? results.errors : null,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', syncLogId);
+    }
+
     return NextResponse.json({
       success: true,
       date,
@@ -407,6 +440,19 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('Error syncing punch data:', error);
+
+    // Update sync log with failure
+    if (syncLogId) {
+      await supabase
+        .from('sync_logs')
+        .update({
+          status: 'failed',
+          errors: [error instanceof Error ? error.message : 'Unknown error'],
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', syncLogId);
+    }
+
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
