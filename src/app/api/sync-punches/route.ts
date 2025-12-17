@@ -114,6 +114,7 @@ export async function GET(request: Request) {
 
 /**
  * POST - Sync punch data from Paylocity for a date
+ * Logs sync status to sync_logs table for monitoring
  */
 export async function POST(request: Request) {
   let syncLogId: string | null = null;
