@@ -249,13 +249,19 @@ export async function POST(request: Request) {
         results.matched++;
 
         // Fetch GPS history for this technician's vehicle
-        // Use full day window to capture all segments including late arrivals
+        // Query window needs to account for Eastern time punches:
+        // - Start at 4 AM EST (9 AM UTC) to capture early starts
+        // - End at 5 AM EST next day (10 AM UTC) to capture late arrivals home
         let gpsSegments: VehicleSegment[] = [];
         try {
+          const nextDate = new Date(date);
+          nextDate.setDate(nextDate.getDate() + 1);
+          const nextDateStr = nextDate.toISOString().split('T')[0];
+
           const segmentsResponse = await getVehicleSegments(
             tech.verizon_vehicle_id,
-            `${date}T00:00:00Z`,
-            `${date}T23:59:59Z`
+            `${date}T09:00:00Z`,  // 4 AM EST = 9 AM UTC
+            `${nextDateStr}T10:00:00Z`  // 5 AM EST next day = 10 AM UTC
           );
           gpsSegments = segmentsResponse?.Segments || [];
         } catch (gpsError) {

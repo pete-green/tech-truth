@@ -55,14 +55,15 @@ export interface VehicleSegmentInput {
  * Between segments = driving (no GPS location).
  * For in-transit scenarios, we find the nearest segment.
  *
- * Default tolerance is 60 minutes to handle:
- * - Clock-ins/outs while driving (common)
- * - Small timing discrepancies between systems
+ * Default tolerance is 15 minutes - enough for:
+ * - Minor timing discrepancies between systems
+ * - Clock-ins/outs while approaching a stop
+ * But not so long that we match wrong segments (like home from morning)
  */
 export function findLocationAtTime(
   segments: VehicleSegmentInput[],
   targetTime: Date,
-  toleranceMs: number = 60 * 60 * 1000 // 60 minutes (increased from 5)
+  toleranceMs: number = 15 * 60 * 1000 // 15 minutes - reduced from 60 to prevent wrong matches
 ): GPSLocation | null {
   if (!segments || segments.length === 0) return null;
 
