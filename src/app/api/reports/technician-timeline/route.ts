@@ -203,11 +203,103 @@ export async function GET(req: NextRequest) {
         violation_reason,
         expected_location_type,
         can_be_excused,
-        origin
+        origin,
+        paylocity_employee_id,
+        duration_hours,
+        cost_center_name
       `)
       .eq('technician_id', technicianId)
       .eq('punch_date', date)
       .order('punch_time', { ascending: true });
+
+    // DATA INTEGRITY FIX: Auto-create missing ClockOut records
+    // If a ClockIn has clock_out_time but there's no corresponding ClockOut record, create it
+    const clockInRecords = (punchRecords || []).filter(p => p.punch_type === 'ClockIn' && p.clock_out_time);
+    const clockOutRecords = (punchRecords || []).filter(p => p.punch_type === 'ClockOut');
+
+    for (const clockIn of clockInRecords) {
+      // Check if there's a corresponding ClockOut
+      const hasClockOut = clockOutRecords.some(co =>
+        co.clock_out_time === clockIn.clock_out_time ||
+        co.punch_time === clockIn.clock_out_time
+      );
+
+      if (!hasClockOut && clockIn.clock_out_time) {
+        // Create the missing ClockOut record
+        const { data: newClockOut, error: createError } = await supabase
+          .from('punch_records')
+          .insert({
+            technician_id: technicianId,
+            paylocity_employee_id: clockIn.paylocity_employee_id,
+            punch_date: date,
+            punch_time: clockIn.clock_out_time,
+            punch_type: 'ClockOut',
+            gps_location_type: 'no_gps',
+            gps_distance_from_punch_feet: 0,
+            is_violation: false,
+            expected_location_type: clockIn.expected_location_type,
+            can_be_excused: false,
+            clock_in_time: clockIn.clock_in_time,
+            clock_out_time: clockIn.clock_out_time,
+            duration_hours: clockIn.duration_hours,
+            origin: clockIn.origin,
+            cost_center_name: clockIn.cost_center_name,
+          })
+          .select()
+          .single();
+
+        if (!createError && newClockOut) {
+          // Add to our local records so the timeline includes it
+          (punchRecords as any[]).push(newClockOut);
+          console.log(`Auto-created missing ClockOut record for ${technician.name} on ${date}`);
+        }
+      }
+    }
+
+    // Also handle MealStart/MealEnd the same way
+    const mealStartRecords = (punchRecords || []).filter(p => p.punch_type === 'MealStart' && p.clock_out_time);
+    const mealEndRecords = (punchRecords || []).filter(p => p.punch_type === 'MealEnd');
+
+    for (const mealStart of mealStartRecords) {
+      const hasMealEnd = mealEndRecords.some(me =>
+        me.clock_out_time === mealStart.clock_out_time ||
+        me.punch_time === mealStart.clock_out_time
+      );
+
+      if (!hasMealEnd && mealStart.clock_out_time) {
+        const { data: newMealEnd, error: createError } = await supabase
+          .from('punch_records')
+          .insert({
+            technician_id: technicianId,
+            paylocity_employee_id: mealStart.paylocity_employee_id,
+            punch_date: date,
+            punch_time: mealStart.clock_out_time,
+            punch_type: 'MealEnd',
+            gps_location_type: 'no_gps',
+            gps_distance_from_punch_feet: 0,
+            is_violation: false,
+            expected_location_type: mealStart.expected_location_type,
+            can_be_excused: false,
+            clock_in_time: mealStart.clock_in_time,
+            clock_out_time: mealStart.clock_out_time,
+            duration_hours: mealStart.duration_hours,
+            origin: mealStart.origin,
+            cost_center_name: mealStart.cost_center_name,
+          })
+          .select()
+          .single();
+
+        if (!createError && newMealEnd) {
+          (punchRecords as any[]).push(newMealEnd);
+          console.log(`Auto-created missing MealEnd record for ${technician.name} on ${date}`);
+        }
+      }
+    }
+
+    // Re-sort after potentially adding records
+    (punchRecords as any[]).sort((a, b) =>
+      new Date(a.punch_time).getTime() - new Date(b.punch_time).getTime()
+    );
 
     // Convert to TimelinePunchRecord format
     const punches: TimelinePunchRecord[] = (punchRecords || []).map(p => ({
