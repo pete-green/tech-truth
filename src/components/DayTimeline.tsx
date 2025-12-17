@@ -59,6 +59,8 @@ function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEven
     case 'meal_start':
     case 'meal_end':
       return <Coffee className="w-4 h-4" />;
+    case 'missing_clock_out':
+      return <AlertTriangle className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
@@ -94,6 +96,8 @@ function getEventLabel(event: TimelineEvent): string {
       return 'Meal Break Started';
     case 'meal_end':
       return 'Meal Break Ended';
+    case 'missing_clock_out':
+      return 'Missing Clock-Out';
     default:
       return 'Unknown Event';
   }
@@ -209,6 +213,13 @@ function getEventStyles(event: TimelineEvent): {
         border: 'border-amber-200',
         iconBg: 'bg-amber-500',
         text: 'text-amber-900',
+      };
+    case 'missing_clock_out':
+      return {
+        bg: 'bg-red-50',
+        border: 'border-red-300',
+        iconBg: 'bg-red-500',
+        text: 'text-red-900',
       };
     default:
       return {
