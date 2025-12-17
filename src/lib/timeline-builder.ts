@@ -587,26 +587,50 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
   }
 
   // Add punch events (clock in/out, meal breaks)
-  // Only show: first clock-in, last clock-out, and meal breaks
-  // This avoids showing confusing duplicate punches at segment boundaries (e.g., lunch breaks)
+  // Filter out duplicate punches at the same timestamp to avoid confusion
+  // e.g., when a segment ends at 12:34 and another starts at 12:34, we get both ClockOut and ClockIn at same time
   if (input.punches && input.punches.length > 0) {
-    // Find the first clock-in and last clock-out
-    const clockIns = input.punches.filter(p => p.punch_type === 'ClockIn' && p.punch_time);
-    const clockOuts = input.punches.filter(p => p.punch_type === 'ClockOut' && p.punch_time);
-    const mealEvents = input.punches.filter(p => (p.punch_type === 'MealStart' || p.punch_type === 'MealEnd') && p.punch_time);
+    // Sort all punches by time
+    const sortedPunches = [...input.punches]
+      .filter(p => p.punch_time)
+      .sort((a, b) => new Date(a.punch_time!).getTime() - new Date(b.punch_time!).getTime());
 
-    // Sort to find first/last
-    clockIns.sort((a, b) => new Date(a.punch_time!).getTime() - new Date(b.punch_time!).getTime());
-    clockOuts.sort((a, b) => new Date(a.punch_time!).getTime() - new Date(b.punch_time!).getTime());
+    // Find unique timestamps with punch types at each
+    // If both ClockIn and ClockOut at same time, keep only:
+    // - ClockOut if it's the first occurrence at that time (end of segment)
+    // - ClockIn if it's the last occurrence at that time (start of next segment)
+    // Actually simpler: dedupe by keeping only one punch per unique timestamp
+    // Prefer: ClockOut for ending work, ClockIn for starting work
+    const seenTimestamps = new Map<string, typeof sortedPunches[0]>();
 
-    const firstClockIn = clockIns[0];
-    const lastClockOut = clockOuts[clockOuts.length - 1];
+    for (const punch of sortedPunches) {
+      const timeKey = punch.punch_time!;
+      const existing = seenTimestamps.get(timeKey);
 
-    // Build filtered punch list: first clock-in, last clock-out, and all meal events
-    const punchesToShow: typeof input.punches = [];
-    if (firstClockIn) punchesToShow.push(firstClockIn);
-    if (lastClockOut) punchesToShow.push(lastClockOut);
-    punchesToShow.push(...mealEvents);
+      if (!existing) {
+        seenTimestamps.set(timeKey, punch);
+      } else {
+        // If we have both ClockIn and ClockOut at same time:
+        // - Keep ClockOut if this is mid-day (there are punches after)
+        // - Keep ClockIn if this is the only occurrence
+        // For simplicity: prefer ClockOut over ClockIn at same timestamp (shows "went on break")
+        // But for the very first punch of day, prefer ClockIn
+        // And for the very last punch of day, prefer ClockOut
+        const isFirstPunch = sortedPunches.indexOf(punch) <= 1;
+        const isLastPunch = sortedPunches.indexOf(punch) >= sortedPunches.length - 2;
+
+        if (isFirstPunch && punch.punch_type === 'ClockIn') {
+          seenTimestamps.set(timeKey, punch); // Prefer ClockIn at start of day
+        } else if (isLastPunch && punch.punch_type === 'ClockOut') {
+          seenTimestamps.set(timeKey, punch); // Prefer ClockOut at end of day
+        } else if (existing.punch_type === 'ClockIn' && punch.punch_type === 'ClockOut') {
+          seenTimestamps.set(timeKey, punch); // Prefer ClockOut mid-day (going on break)
+        }
+        // Otherwise keep existing
+      }
+    }
+
+    const punchesToShow = Array.from(seenTimestamps.values());
 
     for (const punch of punchesToShow) {
       // Determine event type based on punch_type field
