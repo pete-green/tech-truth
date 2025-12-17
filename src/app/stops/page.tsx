@@ -20,9 +20,10 @@ import {
   Clock,
   Tag,
 } from 'lucide-react';
-import DayTimelineComponent from '@/components/DayTimeline';
+import DayTimelineComponent, { AssignJobData } from '@/components/DayTimeline';
 import SimpleMapModal from '@/components/SimpleMapModal';
 import LabelLocationModal from '@/components/LabelLocationModal';
+import AssignJobModal from '@/components/AssignJobModal';
 import ViolationsPanel, { Violation } from '@/components/ViolationsPanel';
 import DataStatusCard from '@/components/DataStatusCard';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
@@ -117,6 +118,10 @@ export default function StopDetailsPage() {
   // Label location modal state
   const [labelModalOpen, setLabelModalOpen] = useState(false);
   const [labelLocation, setLabelLocation] = useState<LabelLocationData | null>(null);
+
+  // Assign job modal state
+  const [assignJobModalOpen, setAssignJobModalOpen] = useState(false);
+  const [assignJobData, setAssignJobData] = useState<AssignJobData | null>(null);
 
   // Violations state
   const [violations, setViolations] = useState<Violation[]>([]);
@@ -469,6 +474,38 @@ export default function StopDetailsPage() {
     await fetchTimelines();
   };
 
+  // Handle assigning a job to an unknown stop
+  const handleOpenAssignJob = (data: AssignJobData) => {
+    setAssignJobData(data);
+    setAssignJobModalOpen(true);
+  };
+
+  const handleAssignJob = async (jobId: string) => {
+    if (!assignJobData) return;
+
+    const response = await fetch('/api/manual-job-associations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        technicianId: assignJobData.technicianId,
+        jobId,
+        jobDate: assignJobData.date,
+        gpsLatitude: assignJobData.latitude,
+        gpsLongitude: assignJobData.longitude,
+        gpsTimestamp: assignJobData.timestamp,
+        gpsAddress: assignJobData.address,
+      }),
+    });
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to assign job');
+    }
+
+    // Refresh timelines to show the updated data
+    await fetchTimelines();
+  };
+
   const selectedTech = technicians.find(t => t.id === selectedTechId);
 
   // Calculate summary stats
@@ -779,6 +816,7 @@ export default function StopDetailsPage() {
                 timeline={timeline}
                 onShowMapLocation={handleShowMapLocation}
                 onLabelLocation={handleLabelLocation}
+                onAssignJob={handleOpenAssignJob}
               />
             ))}
           </div>
@@ -812,6 +850,25 @@ export default function StopDetailsPage() {
           longitude={labelLocation.longitude}
           address={labelLocation.address}
           onSave={handleSaveLocation}
+        />
+      )}
+
+      {/* Assign Job Modal */}
+      {assignJobData && selectedTech && (
+        <AssignJobModal
+          isOpen={assignJobModalOpen}
+          onClose={() => {
+            setAssignJobModalOpen(false);
+            setAssignJobData(null);
+          }}
+          technicianId={assignJobData.technicianId}
+          technicianName={selectedTech.name}
+          date={assignJobData.date}
+          latitude={assignJobData.latitude}
+          longitude={assignJobData.longitude}
+          timestamp={assignJobData.timestamp}
+          address={assignJobData.address}
+          onAssign={handleAssignJob}
         />
       )}
     </main>

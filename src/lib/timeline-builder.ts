@@ -2,7 +2,7 @@
 
 import { VehicleSegment } from './verizon-connect';
 import { JobDetail } from '@/types/reports';
-import { TimelineEvent, TimelineInput, TechTimelineConfig, DayTimeline } from '@/types/timeline';
+import { TimelineEvent, TimelineInput, TechTimelineConfig, DayTimeline, ManualJobAssociation } from '@/types/timeline';
 import { CustomLocation } from '@/types/custom-location';
 import {
   calculateDistanceFeet,
@@ -14,6 +14,64 @@ import {
   isPointInPolygon,
 } from './geo-utils';
 import { format, parseISO } from 'date-fns';
+
+// Tolerance for matching manual associations to segments
+const MANUAL_ASSOC_TIME_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
+const MANUAL_ASSOC_DISTANCE_TOLERANCE_FT = 200; // 200 feet
+
+/**
+ * Match manual job associations to GPS segments
+ * Returns a map of segment index -> { job, associationId } for manually associated segments
+ */
+function matchManualAssociationsToSegments(
+  segments: VehicleSegment[],
+  jobs: JobDetail[],
+  manualAssociations?: ManualJobAssociation[]
+): Map<number, { job: JobDetail; associationId: string }> {
+  const matches = new Map<number, { job: JobDetail; associationId: string }>();
+
+  if (!manualAssociations || manualAssociations.length === 0) {
+    return matches;
+  }
+
+  // Create a job lookup by ID
+  const jobsById = new Map(jobs.map(job => [job.id, job]));
+
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (!segment.EndLocation || !segment.EndDateUtc) continue;
+
+    const segmentEndTime = parseVerizonUtcTimestamp(segment.EndDateUtc);
+
+    for (const assoc of manualAssociations) {
+      const assocTime = new Date(assoc.gps_timestamp);
+      const timeDiff = Math.abs(segmentEndTime.getTime() - assocTime.getTime());
+
+      // Check if within time tolerance
+      if (timeDiff > MANUAL_ASSOC_TIME_TOLERANCE_MS) continue;
+
+      // Check if within distance tolerance
+      const distance = calculateDistanceFeet(
+        segment.EndLocation.Latitude,
+        segment.EndLocation.Longitude,
+        assoc.gps_latitude,
+        assoc.gps_longitude
+      );
+
+      if (distance <= MANUAL_ASSOC_DISTANCE_TOLERANCE_FT) {
+        // Found a match - get the associated job (skip if job_id is null)
+        if (assoc.job_id) {
+          const job = jobsById.get(assoc.job_id);
+          if (job && !matches.has(i)) {
+            matches.set(i, { job, associationId: assoc.id });
+          }
+        }
+      }
+    }
+  }
+
+  return matches;
+}
 
 /**
  * Match jobs to GPS segments based on location proximity
@@ -236,7 +294,10 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     };
   }
 
-  // Match jobs to segments
+  // Match manual associations to segments FIRST (takes priority)
+  const manualMatches = matchManualAssociationsToSegments(sortedSegments, jobs, input.manualAssociations);
+
+  // Then match remaining jobs to segments automatically
   const segmentJobMatches = matchJobsToSegments(sortedSegments, jobs);
 
   // Track what we've seen
@@ -322,7 +383,12 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     if (!segment.EndDateUtc || !segment.EndLocation) continue;
 
     const arrivalTime = parseVerizonUtcTimestamp(segment.EndDateUtc);
-    const matchedJob = segmentJobMatches.get(i);
+
+    // Check manual associations first (they take priority over automatic matching)
+    const manualMatch = manualMatches.get(i);
+    const matchedJob = manualMatch?.job || segmentJobMatches.get(i);
+    const isManualAssociation = !!manualMatch;
+    const manualAssociationId = manualMatch?.associationId;
 
     const endClassification = classifyLocation(
       segment.EndLocation.Latitude,
@@ -481,6 +547,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           isLate,
           varianceMinutes,
           isFirstJob,
+          isManualAssociation,
+          manualAssociationId,
         });
 
         lastArrivalType = 'job';

@@ -317,6 +317,67 @@ export type Database = {
           },
         ]
       }
+      manual_job_associations: {
+        Row: {
+          created_at: string | null
+          gps_address: string | null
+          gps_latitude: number
+          gps_longitude: number
+          gps_timestamp: string
+          id: string
+          job_date: string
+          job_id: string | null
+          notes: string | null
+          technician_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          gps_address?: string | null
+          gps_latitude: number
+          gps_longitude: number
+          gps_timestamp: string
+          id?: string
+          job_date: string
+          job_id?: string | null
+          notes?: string | null
+          technician_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          gps_address?: string | null
+          gps_latitude?: number
+          gps_longitude?: number
+          gps_timestamp?: string
+          id?: string
+          job_date?: string
+          job_id?: string | null
+          notes?: string | null
+          technician_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manual_job_associations_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manual_job_associations_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technician_performance"
+            referencedColumns: ["technician_id"]
+          },
+          {
+            foreignKeyName: "manual_job_associations_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       office_visits: {
         Row: {
           arrival_time: string | null
@@ -762,3 +823,4 @@ export type OfficeVisit = Database['public']['Tables']['office_visits']['Row'];
 export type CustomLocationDb = Database['public']['Tables']['custom_locations']['Row'];
 export type PunchRecord = Database['public']['Tables']['punch_records']['Row'];
 export type ExcusedOfficeVisit = Database['public']['Tables']['excused_office_visits']['Row'];
+export type ManualJobAssociationDb = Database['public']['Tables']['manual_job_associations']['Row'];

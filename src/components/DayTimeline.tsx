@@ -1,7 +1,7 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check } from 'lucide-react';
+import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2 } from 'lucide-react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 import { getCategoryIcon, getCategoryColors } from '@/lib/location-logos';
 
@@ -18,11 +18,21 @@ interface LabelLocationData {
   address: string;
 }
 
+export interface AssignJobData {
+  technicianId: string;
+  date: string;
+  latitude: number;
+  longitude: number;
+  timestamp: string;
+  address: string;
+}
+
 interface DayTimelineProps {
   timeline: DayTimeline;
   onShowGpsLocation?: (jobId: string, jobNumber: string) => void;
   onShowMapLocation?: (location: MapLocation) => void;
   onLabelLocation?: (location: LabelLocationData) => void;
+  onAssignJob?: (data: AssignJobData) => void;
 }
 
 function formatDuration(minutes: number): string {
@@ -255,15 +265,21 @@ function getEventStyles(event: TimelineEvent): {
 function TimelineEventCard({
   event,
   showTravelTime,
+  technicianId,
+  date,
   onShowGpsLocation,
   onShowMapLocation,
   onLabelLocation,
+  onAssignJob,
 }: {
   event: TimelineEvent;
   showTravelTime: boolean;
+  technicianId: string;
+  date: string;
   onShowGpsLocation?: (jobId: string, jobNumber: string) => void;
   onShowMapLocation?: (location: MapLocation) => void;
   onLabelLocation?: (location: LabelLocationData) => void;
+  onAssignJob?: (data: AssignJobData) => void;
 }) {
   const styles = getEventStyles(event);
   const time = format(parseISO(event.timestamp), 'h:mm a');
@@ -293,6 +309,16 @@ function TimelineEventCard({
               <span className={`font-medium ${styles.text}`}>
                 {getEventLabel(event)}
               </span>
+
+              {/* Manual association indicator */}
+              {event.isManualAssociation && (
+                <span
+                  title="Manually associated with this job"
+                  className="text-blue-400"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                </span>
+              )}
 
               {/* First job badge */}
               {event.isFirstJob && (
@@ -468,6 +494,24 @@ function TimelineEventCard({
                 Label This Location
               </button>
             )}
+
+            {/* Assign Job button for unknown stops */}
+            {event.type === 'arrived_unknown' && event.latitude && event.longitude && onAssignJob && (
+              <button
+                onClick={() => onAssignJob({
+                  technicianId,
+                  date,
+                  latitude: event.latitude!,
+                  longitude: event.longitude!,
+                  timestamp: event.timestamp,
+                  address: event.address || 'Unknown Location',
+                })}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+              >
+                <Briefcase className="w-3 h-3" />
+                Assign Job
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -480,6 +524,7 @@ export default function DayTimelineComponent({
   onShowGpsLocation,
   onShowMapLocation,
   onLabelLocation,
+  onAssignJob,
 }: DayTimelineProps) {
   const formattedDate = format(parseISO(timeline.date), 'MMMM d, yyyy');
 
@@ -561,9 +606,12 @@ export default function DayTimelineComponent({
             key={event.id}
             event={event}
             showTravelTime={index > 0}
+            technicianId={timeline.technicianId}
+            date={timeline.date}
             onShowGpsLocation={onShowGpsLocation}
             onShowMapLocation={onShowMapLocation}
             onLabelLocation={onLabelLocation}
+            onAssignJob={onAssignJob}
           />
         ))}
       </div>

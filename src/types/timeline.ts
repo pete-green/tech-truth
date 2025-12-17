@@ -59,6 +59,10 @@ export interface TimelineEvent {
   isExcused?: boolean;  // If an office visit was excused
   excusedReason?: string;  // 'pickup_helper', 'meeting', 'manager_request', etc.
   gpsLocationType?: string;  // Where GPS showed they were
+
+  // Manual job association info (for jobs manually linked to GPS stops)
+  isManualAssociation?: boolean;
+  manualAssociationId?: string;
 }
 
 export interface DayTimeline {
@@ -110,6 +114,20 @@ export interface TimelinePunchRecord {
   origin?: string | null;
 }
 
+// Manual job association from database
+export interface ManualJobAssociation {
+  id: string;
+  technician_id: string | null;
+  job_id: string | null;
+  job_date: string;
+  gps_latitude: number;
+  gps_longitude: number;
+  gps_timestamp: string;
+  gps_address?: string | null;
+  created_at?: string | null;
+  notes?: string | null;
+}
+
 // Input for timeline building
 export interface TimelineInput {
   date: string;
@@ -120,6 +138,7 @@ export interface TimelineInput {
   techConfig: TechTimelineConfig;
   customLocations?: import('./custom-location').CustomLocation[];
   punches?: TimelinePunchRecord[];
+  manualAssociations?: ManualJobAssociation[];
   excusedOfficeVisit?: {
     reason: string;
     notes?: string;

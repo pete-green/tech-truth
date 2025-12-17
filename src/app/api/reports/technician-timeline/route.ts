@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase';
 import { getVehicleSegments } from '@/lib/verizon-connect';
 import { buildDayTimeline } from '@/lib/timeline-builder';
 import { JobDetail } from '@/types/reports';
-import { TechTimelineConfig, DayTimeline, TimelinePunchRecord } from '@/types/timeline';
+import { TechTimelineConfig, DayTimeline, TimelinePunchRecord, ManualJobAssociation } from '@/types/timeline';
 import { CustomLocationRow, rowToCustomLocation } from '@/types/custom-location';
 import { OFFICE_LOCATION } from '@/lib/geo-utils';
 import { parseISO, differenceInMinutes, addDays, format } from 'date-fns';
@@ -239,6 +239,26 @@ export async function GET(req: NextRequest) {
       ? { reason: excusedVisit.reason, notes: excusedVisit.notes || undefined }
       : undefined;
 
+    // Fetch manual job associations for this technician on this date
+    const { data: manualAssocRows } = await supabase
+      .from('manual_job_associations')
+      .select('*')
+      .eq('technician_id', technicianId)
+      .eq('job_date', date);
+
+    const manualAssociations: ManualJobAssociation[] = (manualAssocRows || []).map(row => ({
+      id: row.id,
+      technician_id: row.technician_id,
+      job_id: row.job_id,
+      job_date: row.job_date,
+      gps_latitude: row.gps_latitude,
+      gps_longitude: row.gps_longitude,
+      gps_timestamp: row.gps_timestamp,
+      gps_address: row.gps_address,
+      created_at: row.created_at,
+      notes: row.notes,
+    }));
+
     // Build tech config
     const techConfig: TechTimelineConfig = {
       takesTruckHome: technician.takes_truck_home || false,
@@ -267,6 +287,7 @@ export async function GET(req: NextRequest) {
       customLocations,
       punches,
       excusedOfficeVisit,
+      manualAssociations,
     });
 
     return NextResponse.json({
