@@ -34,6 +34,27 @@ function formatDuration(minutes: number): string {
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
+function formatGpsLocationType(locationType: string): string {
+  // Convert snake_case location types to friendly display names
+  switch (locationType.toLowerCase()) {
+    case 'home':
+      return 'Home';
+    case 'office':
+      return 'Office';
+    case 'job':
+      return 'Job Site';
+    case 'unknown':
+      return 'Unknown Location';
+    case 'custom':
+      return 'Known Location';
+    case 'no_gps':
+      return 'No GPS Data';
+    default:
+      // Capitalize first letter and replace underscores with spaces
+      return locationType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+}
+
 function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEvent['type']; isUnnecessary?: boolean; customCategory?: string }) {
   switch (type) {
     case 'left_home':
@@ -365,11 +386,11 @@ function TimelineEventCard({
             </div>
           )}
 
-          {/* GPS location type for clock events */}
-          {(event.type === 'clock_in' || event.type === 'clock_out') && event.gpsLocationType && (
+          {/* GPS location type for clock events - only show if we have meaningful GPS data */}
+          {(event.type === 'clock_in' || event.type === 'clock_out') && event.gpsLocationType && event.gpsLocationType !== 'no_gps' && (
             <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
               <MapPin className="w-3 h-3" />
-              GPS Location: {event.gpsLocationType.charAt(0).toUpperCase() + event.gpsLocationType.slice(1)}
+              GPS Location: {formatGpsLocationType(event.gpsLocationType)}
             </div>
           )}
 
