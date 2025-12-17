@@ -155,14 +155,15 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     if (input.punches && input.punches.length > 0) {
       for (const punch of input.punches) {
         let eventType: TimelineEvent['type'];
-        if (punch.punch_type === 'ClockIn' || punch.clock_in_time) {
-          eventType = 'clock_in';
-        } else if (punch.punch_type === 'ClockOut' || punch.clock_out_time) {
-          eventType = 'clock_out';
-        } else if (punch.punch_type === 'MealStart') {
+        // Check MealStart/MealEnd FIRST since they also have clock_in_time/clock_out_time set
+        if (punch.punch_type === 'MealStart') {
           eventType = 'meal_start';
         } else if (punch.punch_type === 'MealEnd') {
           eventType = 'meal_end';
+        } else if (punch.punch_type === 'ClockIn' || punch.clock_in_time) {
+          eventType = 'clock_in';
+        } else if (punch.punch_type === 'ClockOut' || punch.clock_out_time) {
+          eventType = 'clock_out';
         } else {
           continue;
         }
@@ -634,15 +635,16 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
 
     for (const punch of punchesToShow) {
       // Determine event type based on punch_type field
+      // Check MealStart/MealEnd first for consistency
       let eventType: TimelineEvent['type'];
-      if (punch.punch_type === 'ClockIn') {
-        eventType = 'clock_in';
-      } else if (punch.punch_type === 'ClockOut') {
-        eventType = 'clock_out';
-      } else if (punch.punch_type === 'MealStart') {
+      if (punch.punch_type === 'MealStart') {
         eventType = 'meal_start';
       } else if (punch.punch_type === 'MealEnd') {
         eventType = 'meal_end';
+      } else if (punch.punch_type === 'ClockIn') {
+        eventType = 'clock_in';
+      } else if (punch.punch_type === 'ClockOut') {
+        eventType = 'clock_out';
       } else {
         continue; // Unknown punch type
       }
