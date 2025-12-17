@@ -587,11 +587,29 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
   }
 
   // Add punch events (clock in/out, meal breaks)
+  // Only show: first clock-in, last clock-out, and meal breaks
+  // This avoids showing confusing duplicate punches at segment boundaries (e.g., lunch breaks)
   if (input.punches && input.punches.length > 0) {
-    for (const punch of input.punches) {
+    // Find the first clock-in and last clock-out
+    const clockIns = input.punches.filter(p => p.punch_type === 'ClockIn' && p.punch_time);
+    const clockOuts = input.punches.filter(p => p.punch_type === 'ClockOut' && p.punch_time);
+    const mealEvents = input.punches.filter(p => (p.punch_type === 'MealStart' || p.punch_type === 'MealEnd') && p.punch_time);
+
+    // Sort to find first/last
+    clockIns.sort((a, b) => new Date(a.punch_time!).getTime() - new Date(b.punch_time!).getTime());
+    clockOuts.sort((a, b) => new Date(a.punch_time!).getTime() - new Date(b.punch_time!).getTime());
+
+    const firstClockIn = clockIns[0];
+    const lastClockOut = clockOuts[clockOuts.length - 1];
+
+    // Build filtered punch list: first clock-in, last clock-out, and all meal events
+    const punchesToShow: typeof input.punches = [];
+    if (firstClockIn) punchesToShow.push(firstClockIn);
+    if (lastClockOut) punchesToShow.push(lastClockOut);
+    punchesToShow.push(...mealEvents);
+
+    for (const punch of punchesToShow) {
       // Determine event type based on punch_type field
-      // Note: punch_type is the authoritative field - clock_in_time/clock_out_time
-      // are just the actual times recorded, present on both ClockIn and ClockOut records
       let eventType: TimelineEvent['type'];
       if (punch.punch_type === 'ClockIn') {
         eventType = 'clock_in';
@@ -605,11 +623,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         continue; // Unknown punch type
       }
 
-      // Use the punch_time field which is set correctly during sync
-      // For ClockIn records: punch_time = clock_in_time (when they clocked in)
-      // For ClockOut records: punch_time = clock_out_time (when they clocked out)
       const punchTime = punch.punch_time;
-
       if (!punchTime) continue;
 
       // Check if excused (for office visits)
