@@ -351,6 +351,13 @@ async function syncPunchesForDate(date: string): Promise<{
       const clockInTimestamp = toEasternTimestamp(punch.clockInTime);
       const clockOutTimestamp = toEasternTimestamp(punch.clockOutTime);
 
+      // Skip records that don't have a valid punch time
+      if (!clockInTimestamp) {
+        console.warn(`Skipping punch for ${tech.name}: no clockInTime`);
+        results.skipped++;
+        continue;
+      }
+
       if (clockInTimestamp && !clockOutTimestamp) {
         results.missingClockOuts++;
       }

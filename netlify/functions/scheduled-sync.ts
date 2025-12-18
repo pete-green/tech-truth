@@ -1,8 +1,8 @@
 import type { Handler, HandlerEvent, HandlerContext } from '@netlify/functions';
 
-// Scheduled function to sync technician arrival data and punch records
-// Runs every 15 minutes during work hours (configured in netlify.toml)
-// Syncs: 1) Job/GPS/arrival data, 2) Clock in/out punch data from Paylocity
+// Scheduled function to sync ALL technician data continuously
+// Runs every 15 minutes (configured in netlify.toml)
+// Syncs: 1) GPS location data, 2) Job/arrival data, 3) Punch records from Paylocity
 
 const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
   console.log('Scheduled sync triggered at:', new Date().toISOString());
@@ -12,14 +12,32 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
   const todayDate = new Date().toISOString().split('T')[0];
 
   const results: {
+    gpsData?: any;
     syncData?: any;
     punchData?: any;
     errors: string[];
   } = { errors: [] };
 
   try {
-    // Step 1: Sync job/GPS/arrival data
-    console.log('Step 1: Syncing job/GPS/arrival data...');
+    // Step 1: Sync GPS location data (CRITICAL - this populates the database with GPS history)
+    console.log('Step 1: Syncing GPS location data...');
+    const gpsResponse = await fetch(`${baseUrl}/api/sync-gps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: todayDate }),
+    });
+
+    if (gpsResponse.ok) {
+      results.gpsData = await gpsResponse.json();
+      console.log('GPS sync completed:', results.gpsData.summary);
+    } else {
+      const errorData = await gpsResponse.json().catch(() => ({ error: 'Unknown error' }));
+      results.errors.push(`GPS sync failed: ${errorData.error || 'Unknown error'}`);
+      console.error('GPS sync error:', errorData);
+    }
+
+    // Step 2: Sync job/arrival data
+    console.log('Step 2: Syncing job/arrival data...');
     const syncResponse = await fetch(`${baseUrl}/api/sync-data`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -33,13 +51,13 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       results.syncData = await syncResponse.json();
       console.log('Sync data completed:', results.syncData.summary);
     } else {
-      const errorData = await syncResponse.json();
+      const errorData = await syncResponse.json().catch(() => ({ error: 'Unknown error' }));
       results.errors.push(`Sync data failed: ${errorData.error || 'Unknown error'}`);
       console.error('Sync data error:', errorData);
     }
 
-    // Step 2: Sync Paylocity punch data (clock in/out)
-    console.log('Step 2: Syncing Paylocity punch data...');
+    // Step 3: Sync Paylocity punch data (clock in/out)
+    console.log('Step 3: Syncing Paylocity punch data...');
     const punchResponse = await fetch(`${baseUrl}/api/sync-punches`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -53,7 +71,7 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
         violations: results.punchData.violations,
       });
     } else {
-      const errorData = await punchResponse.json();
+      const errorData = await punchResponse.json().catch(() => ({ error: 'Unknown error' }));
       results.errors.push(`Punch sync failed: ${errorData.error || 'Unknown error'}`);
       console.error('Punch sync error:', errorData);
     }
@@ -67,6 +85,7 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
         message: hasErrors ? 'Scheduled sync completed with errors' : 'Scheduled sync completed',
         timestamp: new Date().toISOString(),
         date: todayDate,
+        gpsData: results.gpsData?.summary,
         syncData: results.syncData?.summary,
         punchData: results.punchData ? {
           processed: results.punchData.processed,

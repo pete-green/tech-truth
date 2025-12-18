@@ -52,15 +52,36 @@ export default function Navigation({ onSyncComplete }: NavigationProps) {
 
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
+
+      // Step 1: Sync GPS data first (populates database with current locations)
+      console.log('Syncing GPS data...');
+      const gpsResponse = await fetch('/api/sync-gps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: today }),
+      });
+      const gpsData = await gpsResponse.json();
+      console.log('GPS sync result:', gpsData.summary);
+
+      // Step 2: Sync job/arrival data
+      console.log('Syncing job/arrival data...');
       const response = await fetch('/api/sync-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: today }),
       });
-
       const data = await response.json();
-
       if (!response.ok) throw new Error(data.error);
+
+      // Step 3: Sync punch data
+      console.log('Syncing punch data...');
+      const punchResponse = await fetch('/api/sync-punches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: today }),
+      });
+      const punchData = await punchResponse.json();
+      console.log('Punch sync result:', punchData);
 
       await fetchLastSync();
       onSyncComplete?.();
