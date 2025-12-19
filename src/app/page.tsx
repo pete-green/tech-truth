@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import AnnotationsReviewPanel from '@/components/AnnotationsReviewPanel';
 
 interface Technician {
   id: string;
@@ -410,6 +411,11 @@ export default function Dashboard() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* Annotations Review Panel */}
+      <div className="mt-6">
+        <AnnotationsReviewPanel />
       </div>
     </main>
   );
