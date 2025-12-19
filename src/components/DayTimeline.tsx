@@ -309,12 +309,24 @@ function TimelineEventCard({
 
   return (
     <div className="relative">
-      {/* Travel time indicator */}
-      {showTravelTime && event.travelMinutes !== undefined && event.travelMinutes > 0 && (
-        <div className="flex items-center gap-2 ml-6 my-2 text-xs text-gray-500">
-          <div className="w-px h-4 bg-gray-300 ml-1.5"></div>
-          <Navigation className="w-3 h-3 text-gray-400 rotate-180" />
-          <span>{formatDuration(event.travelMinutes)} drive</span>
+      {/* Travel time indicator - show elapsed time when there's untracked time */}
+      {showTravelTime && (event.travelMinutes !== undefined || event.elapsedMinutes !== undefined) && (event.travelMinutes || 0) > 0 && (
+        <div className={`flex items-center gap-2 ml-6 my-2 text-xs ${event.hasUntrackedTime ? 'text-orange-600' : 'text-gray-500'}`}>
+          <div className={`w-px h-4 ml-1.5 ${event.hasUntrackedTime ? 'bg-orange-300' : 'bg-gray-300'}`}></div>
+          {event.hasUntrackedTime ? (
+            <>
+              <AlertTriangle className="w-3 h-3 text-orange-500" />
+              <span className="font-medium">
+                {formatDuration(event.elapsedMinutes || event.travelMinutes || 0)} elapsed
+              </span>
+              <span className="text-orange-500">(only {formatDuration(event.travelMinutes || 0)} tracked driving)</span>
+            </>
+          ) : (
+            <>
+              <Navigation className="w-3 h-3 text-gray-400 rotate-180" />
+              <span>{formatDuration(event.travelMinutes || 0)} drive</span>
+            </>
+          )}
         </div>
       )}
 

@@ -239,6 +239,90 @@ export type Database = {
           },
         ]
       }
+      gps_segments: {
+        Row: {
+          created_at: string | null
+          distance_miles: number | null
+          duration_minutes: number | null
+          end_address: string | null
+          end_latitude: number | null
+          end_longitude: number | null
+          end_time: string | null
+          id: string
+          idle_minutes: number | null
+          is_complete: boolean | null
+          max_speed: number | null
+          raw_segment: Json | null
+          segment_date: string
+          start_address: string | null
+          start_latitude: number
+          start_longitude: number
+          start_time: string
+          technician_id: string | null
+          updated_at: string | null
+          vehicle_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          distance_miles?: number | null
+          duration_minutes?: number | null
+          end_address?: string | null
+          end_latitude?: number | null
+          end_longitude?: number | null
+          end_time?: string | null
+          id?: string
+          idle_minutes?: number | null
+          is_complete?: boolean | null
+          max_speed?: number | null
+          raw_segment?: Json | null
+          segment_date: string
+          start_address?: string | null
+          start_latitude: number
+          start_longitude: number
+          start_time: string
+          technician_id?: string | null
+          updated_at?: string | null
+          vehicle_id: string
+        }
+        Update: {
+          created_at?: string | null
+          distance_miles?: number | null
+          duration_minutes?: number | null
+          end_address?: string | null
+          end_latitude?: number | null
+          end_longitude?: number | null
+          end_time?: string | null
+          id?: string
+          idle_minutes?: number | null
+          is_complete?: boolean | null
+          max_speed?: number | null
+          raw_segment?: Json | null
+          segment_date?: string
+          start_address?: string | null
+          start_latitude?: number
+          start_longitude?: number
+          start_time?: string
+          technician_id?: string | null
+          updated_at?: string | null
+          vehicle_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gps_segments_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technician_performance"
+            referencedColumns: ["technician_id"]
+          },
+          {
+            foreignKeyName: "gps_segments_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           actual_arrival: string | null

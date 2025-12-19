@@ -308,8 +308,10 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
   let firstJobOnTime: boolean | null = null;
   let firstJobVariance: number | null = null;
 
-  // Track the last visible event departure time (for elapsed time calculation)
-  let lastVisibleDepartureTime: Date | null = null;
+  // Track times for elapsed time and gap detection
+  // previousArrivalTime: when the PREVIOUS segment ENDED (for calculating elapsed time to user)
+  // This is what the user sees as the "from" time
+  let previousArrivalTime: Date | null = null;
 
   // Track last arrival to dedupe consecutive arrivals at same location type
   // This prevents multiple "Arrived Home" events when GPS registers multiple short segments
@@ -383,6 +385,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     if (!segment.EndDateUtc || !segment.EndLocation) continue;
 
     const arrivalTime = parseVerizonUtcTimestamp(segment.EndDateUtc);
+    const segmentStartTime = segment.StartDateUtc ? parseVerizonUtcTimestamp(segment.StartDateUtc) : null;
 
     // Check manual associations first (they take priority over automatic matching)
     const manualMatch = manualMatches.get(i);
@@ -398,13 +401,36 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       customLocations
     );
 
-    // Calculate travel time from previous departure
+    // Calculate travel time (actual GPS segment driving time)
+    // This is the time the vehicle was actually moving (segment start to segment end)
     let travelMinutes: number | undefined;
-    if (previousDepartureTime) {
-      travelMinutes = Math.round((arrivalTime.getTime() - previousDepartureTime.getTime()) / 60000);
+    if (segmentStartTime) {
+      travelMinutes = Math.round((arrivalTime.getTime() - segmentStartTime.getTime()) / 60000);
       if (travelMinutes > 0) {
         totalDriveMinutes += travelMinutes;
       }
+    }
+
+    // Calculate elapsed time since previous arrival (what user actually sees as time between events)
+    // This is the REAL time that passed between leaving previous location and arriving here
+    let elapsedMinutes: number | undefined;
+    let hasUntrackedTime = false;
+
+    if (previousArrivalTime) {
+      elapsedMinutes = Math.round((arrivalTime.getTime() - previousArrivalTime.getTime()) / 60000);
+
+      // Check for untracked time: if there's a gap between previous arrival and current segment start
+      // (more than 5 minutes unaccounted for = likely GPS gap or parked time not captured)
+      if (segmentStartTime) {
+        const gapMinutes = Math.round((segmentStartTime.getTime() - previousArrivalTime.getTime()) / 60000);
+        // If gap is more than 5 minutes and significantly different from what's shown, flag it
+        if (gapMinutes > 5 && elapsedMinutes > (travelMinutes || 0) + 10) {
+          hasUntrackedTime = true;
+        }
+      }
+    } else if (previousDepartureTime) {
+      // First segment after initial departure - use departure time
+      elapsedMinutes = Math.round((arrivalTime.getTime() - previousDepartureTime.getTime()) / 60000);
     }
 
     // Calculate duration at this stop (time until next segment starts)
@@ -439,11 +465,14 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           latitude: segment.EndLocation.Latitude,
           longitude: segment.EndLocation.Longitude,
           travelMinutes,
+          elapsedMinutes,
+          hasUntrackedTime,
           durationMinutes,
         });
         lastArrivalType = 'home';
         lastArrivalJobId = null;
         lastArrivalCustomId = null;
+        previousArrivalTime = arrivalTime;
       }
     } else if (endClassification.type === 'office') {
       // Skip if we're already at office OR we just left office
@@ -475,6 +504,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           latitude: segment.EndLocation.Latitude,
           longitude: segment.EndLocation.Longitude,
           travelMinutes,
+          elapsedMinutes,
+          hasUntrackedTime,
           durationMinutes,
           isUnnecessary,
         });
@@ -482,6 +513,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         lastArrivalType = 'office';
         lastArrivalJobId = null;
         lastArrivalCustomId = null;
+        previousArrivalTime = arrivalTime;
 
         // Add departure event if we have duration
         if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
@@ -543,6 +575,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           customerName: matchedJob.customerName || undefined,
           scheduledTime: matchedJob.scheduledStart,
           travelMinutes,
+          elapsedMinutes,
+          hasUntrackedTime,
           durationMinutes,
           isLate,
           varianceMinutes,
@@ -555,6 +589,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         lastArrivalType = 'job';
         lastArrivalJobId = matchedJob.id;
         lastArrivalCustomId = null;
+        previousArrivalTime = arrivalTime;
 
         // Add departure event if we have duration
         if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
@@ -596,6 +631,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           latitude: segment.EndLocation.Latitude,
           longitude: segment.EndLocation.Longitude,
           travelMinutes,
+          elapsedMinutes,
+          hasUntrackedTime,
           durationMinutes,
           customLocationId: customLoc.id,
           customLocationName: customLoc.name,
@@ -606,6 +643,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         lastArrivalType = 'custom';
         lastArrivalCustomId = customLoc.id;
         lastArrivalJobId = null;
+        previousArrivalTime = arrivalTime;
 
         // Add departure event if we have duration
         if (durationMinutes !== undefined && durationMinutes > 0 && previousDepartureTime) {
@@ -638,8 +676,12 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
           latitude: segment.EndLocation.Latitude,
           longitude: segment.EndLocation.Longitude,
           travelMinutes,
+          elapsedMinutes,
+          hasUntrackedTime,
           durationMinutes,
         });
+
+        previousArrivalTime = arrivalTime;
 
         // Add departure event
         if (previousDepartureTime) {

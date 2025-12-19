@@ -129,55 +129,98 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Fetch GPS segments from Verizon for this date
-    // Query window: 4 AM EST (9 AM UTC) day-of to 5 AM EST (10 AM UTC) next day
-    // This captures: early morning start, full workday, and late night arrivals home
+    // First try to get GPS segments from stored database (synced data)
+    // Fall back to live Verizon API if no stored data
     const targetDate = parseISO(date);
-
-    // Start at 4 AM EST (9 AM UTC) of the target day - captures early starters
-    const startDateUtc = `${date}T09:00:00Z`;
-
-    // End at 5 AM EST (10 AM UTC) next day - captures late night arrivals home
-    const nextDay = format(addDays(targetDate, 1), 'yyyy-MM-dd');
-    const endDateUtc = `${nextDay}T10:00:00Z`;
-
     let segments: Awaited<ReturnType<typeof getVehicleSegments>>['Segments'] = [];
-    try {
-      const segmentsResponse = await getVehicleSegments(
-        technician.verizon_vehicle_id,
-        startDateUtc,
-        endDateUtc
-      );
-      const allSegments = segmentsResponse?.Segments || [];
+    let usedStoredData = false;
 
-      // Filter segments to only include this day's work:
-      // - Must START on or after 4 AM EST (9 AM UTC) on target date
-      // - Must START before 5 AM EST (10 AM UTC) next day
-      // This excludes previous day's late segments that might be in the response
-      const dayStart = new Date(Date.UTC(
-        targetDate.getUTCFullYear(),
-        targetDate.getUTCMonth(),
-        targetDate.getUTCDate(),
-        9, 0, 0 // 9 AM UTC = 4 AM EST - earliest reasonable start
-      ));
+    // Try to get stored segments first
+    const { data: storedSegments, error: storedError } = await supabase
+      .from('gps_segments')
+      .select('*')
+      .eq('technician_id', technicianId)
+      .eq('segment_date', date)
+      .order('start_time', { ascending: true });
 
-      const nextDayWorkStart = new Date(Date.UTC(
-        targetDate.getUTCFullYear(),
-        targetDate.getUTCMonth(),
-        targetDate.getUTCDate() + 1,
-        10, 0, 0 // 10 AM UTC = 5 AM EST - next day's work starts after this
-      ));
+    if (!storedError && storedSegments && storedSegments.length > 0) {
+      // Convert stored segments back to Verizon API format for timeline builder
+      segments = storedSegments.map(seg => ({
+        StartDateUtc: seg.start_time?.replace('Z', '').replace('.000', '') || '',
+        EndDateUtc: seg.end_time?.replace('Z', '').replace('.000', '') || null,
+        IsComplete: seg.is_complete || false,
+        StartLocation: {
+          Latitude: seg.start_latitude,
+          Longitude: seg.start_longitude,
+          AddressLine1: seg.start_address?.split(',')[0] || '',
+          AddressLine2: '',
+          Locality: seg.start_address?.split(',')[1]?.trim() || '',
+          AdministrativeArea: seg.start_address?.split(',')[2]?.trim() || '',
+          PostalCode: seg.start_address?.split(',')[3]?.trim() || '',
+          Country: 'USA',
+        },
+        StartLocationIsPrivate: false,
+        EndLocation: seg.end_latitude && seg.end_longitude ? {
+          Latitude: seg.end_latitude,
+          Longitude: seg.end_longitude,
+          AddressLine1: seg.end_address?.split(',')[0] || '',
+          AddressLine2: '',
+          Locality: seg.end_address?.split(',')[1]?.trim() || '',
+          AdministrativeArea: seg.end_address?.split(',')[2]?.trim() || '',
+          PostalCode: seg.end_address?.split(',')[3]?.trim() || '',
+          Country: 'USA',
+        } : null,
+        EndLocationIsPrivate: false,
+        DistanceTraveled: seg.distance_miles || 0,
+        DistanceKilometers: (seg.distance_miles || 0) * 1.60934,
+        MaxSpeed: seg.max_speed || 0,
+        IdleTime: seg.idle_minutes ? seg.idle_minutes * 60 : 0,
+      }));
+      usedStoredData = true;
+      console.log(`[Timeline] Using ${segments.length} stored segments for ${technician.name} on ${date}`);
+    }
 
-      segments = allSegments.filter(seg => {
-        if (!seg.StartDateUtc) return false;
-        // Verizon timestamps don't have 'Z', parse as UTC by appending Z
-        const startTime = new Date(seg.StartDateUtc + (seg.StartDateUtc.includes('Z') ? '' : 'Z'));
-        // Must be within this day's work window
-        return startTime >= dayStart && startTime < nextDayWorkStart;
-      });
-    } catch (gpsError: any) {
-      console.error('Error fetching GPS segments:', gpsError);
-      segments = [];
+    // Fall back to live API if no stored data
+    if (segments.length === 0) {
+      console.log(`[Timeline] No stored segments, fetching from Verizon API for ${technician.name} on ${date}`);
+
+      // Query window: 4 AM EST (9 AM UTC) day-of to 5 AM EST (10 AM UTC) next day
+      const startDateUtc = `${date}T09:00:00Z`;
+      const nextDay = format(addDays(targetDate, 1), 'yyyy-MM-dd');
+      const endDateUtc = `${nextDay}T10:00:00Z`;
+
+      try {
+        const segmentsResponse = await getVehicleSegments(
+          technician.verizon_vehicle_id,
+          startDateUtc,
+          endDateUtc
+        );
+        const allSegments = segmentsResponse?.Segments || [];
+
+        // Filter segments to only include this day's work
+        const dayStart = new Date(Date.UTC(
+          targetDate.getUTCFullYear(),
+          targetDate.getUTCMonth(),
+          targetDate.getUTCDate(),
+          9, 0, 0 // 9 AM UTC = 4 AM EST
+        ));
+
+        const nextDayWorkStart = new Date(Date.UTC(
+          targetDate.getUTCFullYear(),
+          targetDate.getUTCMonth(),
+          targetDate.getUTCDate() + 1,
+          10, 0, 0 // 10 AM UTC = 5 AM EST
+        ));
+
+        segments = allSegments.filter(seg => {
+          if (!seg.StartDateUtc) return false;
+          const startTime = new Date(seg.StartDateUtc + (seg.StartDateUtc.includes('Z') ? '' : 'Z'));
+          return startTime >= dayStart && startTime < nextDayWorkStart;
+        });
+      } catch (gpsError: any) {
+        console.error('Error fetching GPS segments:', gpsError);
+        segments = [];
+      }
     }
 
     // Fetch custom locations for matching against GPS stops
