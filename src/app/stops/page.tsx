@@ -20,10 +20,12 @@ import {
   Clock,
   Tag,
 } from 'lucide-react';
-import DayTimelineComponent, { AssignJobData } from '@/components/DayTimeline';
+import DayTimelineComponent, { AssignJobData, AnnotatePunchData, AddMissingPunchData } from '@/components/DayTimeline';
 import SimpleMapModal from '@/components/SimpleMapModal';
 import LabelLocationModal from '@/components/LabelLocationModal';
 import AssignJobModal from '@/components/AssignJobModal';
+import PunchAnnotationModal from '@/components/PunchAnnotationModal';
+import ProposedPunchModal from '@/components/ProposedPunchModal';
 import ViolationsPanel, { Violation } from '@/components/ViolationsPanel';
 import DataStatusCard from '@/components/DataStatusCard';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
@@ -122,6 +124,15 @@ export default function StopDetailsPage() {
   // Assign job modal state
   const [assignJobModalOpen, setAssignJobModalOpen] = useState(false);
   const [assignJobData, setAssignJobData] = useState<AssignJobData | null>(null);
+
+  // Punch annotation modal state
+  const [annotationModalOpen, setAnnotationModalOpen] = useState(false);
+  const [annotationData, setAnnotationData] = useState<AnnotatePunchData | null>(null);
+  const [annotationCounts, setAnnotationCounts] = useState<Record<string, number>>({});
+
+  // Proposed punch modal state
+  const [proposedPunchModalOpen, setProposedPunchModalOpen] = useState(false);
+  const [proposedPunchData, setProposedPunchData] = useState<AddMissingPunchData | null>(null);
 
   // Violations state
   const [violations, setViolations] = useState<Violation[]>([]);
@@ -506,6 +517,57 @@ export default function StopDetailsPage() {
     await fetchTimelines();
   };
 
+  // Handle opening annotation modal
+  const handleOpenAnnotation = (data: AnnotatePunchData) => {
+    setAnnotationData(data);
+    setAnnotationModalOpen(true);
+  };
+
+  // Handle opening proposed punch modal
+  const handleOpenProposedPunch = (data: AddMissingPunchData) => {
+    setProposedPunchData(data);
+    setProposedPunchModalOpen(true);
+  };
+
+  // Fetch annotation counts for all punch records in current timelines
+  const fetchAnnotationCounts = useCallback(async () => {
+    if (timelines.length === 0) return;
+
+    // Collect all punch IDs from timelines
+    const punchIds: string[] = [];
+    for (const timeline of timelines) {
+      for (const event of timeline.events) {
+        if (event.punchId) {
+          punchIds.push(event.punchId);
+        }
+      }
+    }
+
+    if (punchIds.length === 0) return;
+
+    // Fetch annotation counts for each punch ID
+    const counts: Record<string, number> = {};
+    await Promise.all(
+      punchIds.map(async (punchId) => {
+        try {
+          const response = await fetch(`/api/punch-annotations?punchRecordId=${punchId}`);
+          const data = await response.json();
+          if (data.success) {
+            counts[punchId] = data.annotations.length;
+          }
+        } catch (err) {
+          console.error(`Error fetching annotation count for ${punchId}:`, err);
+        }
+      })
+    );
+    setAnnotationCounts(counts);
+  }, [timelines]);
+
+  // Fetch annotation counts when timelines change
+  useEffect(() => {
+    fetchAnnotationCounts();
+  }, [fetchAnnotationCounts]);
+
   const selectedTech = technicians.find(t => t.id === selectedTechId);
 
   // Calculate summary stats
@@ -817,6 +879,9 @@ export default function StopDetailsPage() {
                 onShowMapLocation={handleShowMapLocation}
                 onLabelLocation={handleLabelLocation}
                 onAssignJob={handleOpenAssignJob}
+                onAnnotatePunch={handleOpenAnnotation}
+                onAddMissingPunch={handleOpenProposedPunch}
+                annotationCounts={annotationCounts}
               />
             ))}
           </div>
@@ -869,6 +934,40 @@ export default function StopDetailsPage() {
           timestamp={assignJobData.timestamp}
           address={assignJobData.address}
           onAssign={handleAssignJob}
+        />
+      )}
+
+      {/* Punch Annotation Modal */}
+      {annotationData && (
+        <PunchAnnotationModal
+          isOpen={annotationModalOpen}
+          onClose={() => {
+            setAnnotationModalOpen(false);
+            setAnnotationData(null);
+          }}
+          punchRecordId={annotationData.punchRecordId}
+          punchType={annotationData.punchType}
+          punchTime={annotationData.punchTime}
+          gpsLocationType={annotationData.gpsLocationType}
+          address={annotationData.address}
+          isViolation={annotationData.isViolation}
+          violationReason={annotationData.violationReason}
+          onAnnotationAdded={fetchAnnotationCounts}
+        />
+      )}
+
+      {/* Proposed Punch Modal */}
+      {proposedPunchData && (
+        <ProposedPunchModal
+          isOpen={proposedPunchModalOpen}
+          onClose={() => {
+            setProposedPunchModalOpen(false);
+            setProposedPunchData(null);
+          }}
+          technicianId={proposedPunchData.technicianId}
+          technicianName={proposedPunchData.technicianName}
+          date={proposedPunchData.date}
+          onPunchAdded={fetchTimelines}
         />
       )}
     </main>

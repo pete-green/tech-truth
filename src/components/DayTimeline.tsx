@@ -1,7 +1,7 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2 } from 'lucide-react';
+import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2, MessageSquare, Plus } from 'lucide-react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 import { getCategoryIcon, getCategoryColors } from '@/lib/location-logos';
 
@@ -27,12 +27,31 @@ export interface AssignJobData {
   address: string;
 }
 
+export interface AnnotatePunchData {
+  punchRecordId: string;
+  punchType: string;
+  punchTime: string;
+  gpsLocationType?: string;
+  address?: string;
+  isViolation?: boolean;
+  violationReason?: string;
+}
+
+export interface AddMissingPunchData {
+  technicianId: string;
+  technicianName: string;
+  date: string;
+}
+
 interface DayTimelineProps {
   timeline: DayTimeline;
   onShowGpsLocation?: (jobId: string, jobNumber: string) => void;
   onShowMapLocation?: (location: MapLocation) => void;
   onLabelLocation?: (location: LabelLocationData) => void;
   onAssignJob?: (data: AssignJobData) => void;
+  onAnnotatePunch?: (data: AnnotatePunchData) => void;
+  onAddMissingPunch?: (data: AddMissingPunchData) => void;
+  annotationCounts?: Record<string, number>; // punchId -> count of annotations
 }
 
 function formatDuration(minutes: number): string {
@@ -271,6 +290,8 @@ function TimelineEventCard({
   onShowMapLocation,
   onLabelLocation,
   onAssignJob,
+  onAnnotatePunch,
+  annotationCount,
 }: {
   event: TimelineEvent;
   showTravelTime: boolean;
@@ -280,6 +301,8 @@ function TimelineEventCard({
   onShowMapLocation?: (location: MapLocation) => void;
   onLabelLocation?: (location: LabelLocationData) => void;
   onAssignJob?: (data: AssignJobData) => void;
+  onAnnotatePunch?: (data: AnnotatePunchData) => void;
+  annotationCount?: number;
 }) {
   const styles = getEventStyles(event);
   const time = format(parseISO(event.timestamp), 'h:mm a');
@@ -519,6 +542,30 @@ function TimelineEventCard({
                 Assign Job
               </button>
             )}
+
+            {/* Annotate button for punch events */}
+            {(event.type === 'clock_in' || event.type === 'clock_out' || event.type === 'meal_start' || event.type === 'meal_end') && event.punchId && onAnnotatePunch && (
+              <button
+                onClick={() => onAnnotatePunch({
+                  punchRecordId: event.punchId!,
+                  punchType: event.type === 'clock_in' ? 'ClockIn' : event.type === 'clock_out' ? 'ClockOut' : event.type === 'meal_start' ? 'MealStart' : 'MealEnd',
+                  punchTime: event.timestamp,
+                  gpsLocationType: event.gpsLocationType,
+                  address: event.address,
+                  isViolation: event.isViolation,
+                  violationReason: event.violationReason,
+                })}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-yellow-700 hover:bg-yellow-50 rounded transition-colors border border-yellow-300"
+              >
+                <MessageSquare className="w-3 h-3" />
+                Annotate
+                {annotationCount && annotationCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-yellow-200 text-yellow-800 rounded-full text-xs font-medium">
+                    {annotationCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -532,6 +579,9 @@ export default function DayTimelineComponent({
   onShowMapLocation,
   onLabelLocation,
   onAssignJob,
+  onAnnotatePunch,
+  onAddMissingPunch,
+  annotationCounts,
 }: DayTimelineProps) {
   const formattedDate = format(parseISO(timeline.date), 'MMMM d, yyyy');
 
@@ -573,6 +623,19 @@ export default function DayTimelineComponent({
             <span className="text-gray-500">
               {formatDuration(timeline.totalDriveMinutes)} driving
             </span>
+          )}
+          {onAddMissingPunch && (
+            <button
+              onClick={() => onAddMissingPunch({
+                technicianId: timeline.technicianId,
+                technicianName: timeline.technicianName,
+                date: timeline.date,
+              })}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-orange-700 hover:bg-orange-50 rounded transition-colors border border-orange-300"
+            >
+              <Plus className="w-3 h-3" />
+              Add Missing Punch
+            </button>
           )}
         </div>
       </div>
@@ -619,6 +682,8 @@ export default function DayTimelineComponent({
             onShowMapLocation={onShowMapLocation}
             onLabelLocation={onLabelLocation}
             onAssignJob={onAssignJob}
+            onAnnotatePunch={onAnnotatePunch}
+            annotationCount={event.punchId ? annotationCounts?.[event.punchId] : undefined}
           />
         ))}
       </div>
