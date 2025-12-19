@@ -431,6 +431,14 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     } else if (previousDepartureTime) {
       // First segment after initial departure - use departure time
       elapsedMinutes = Math.round((arrivalTime.getTime() - previousDepartureTime.getTime()) / 60000);
+
+      // Also check for untracked time on first segment
+      // If the travel time is significantly less than elapsed, flag it
+      if (segmentStartTime && travelMinutes !== undefined) {
+        if (elapsedMinutes > travelMinutes + 10) {
+          hasUntrackedTime = true;
+        }
+      }
     }
 
     // Calculate duration at this stop (time until next segment starts)
@@ -455,6 +463,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         if (lastHomeEvent && durationMinutes !== undefined) {
           lastHomeEvent.durationMinutes = (lastHomeEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
         }
+        // CRITICAL: Still update previousArrivalTime so next elapsed calculation is correct
+        previousArrivalTime = arrivalTime;
         // Keep lastArrivalType as-is, we're still at home
       } else {
         events.push({
@@ -481,6 +491,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         if (lastOfficeEvent && durationMinutes !== undefined) {
           lastOfficeEvent.durationMinutes = (lastOfficeEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
         }
+        // CRITICAL: Still update previousArrivalTime so next elapsed calculation is correct
+        previousArrivalTime = arrivalTime;
         // Keep lastArrivalType as-is
       } else {
         totalOfficeVisits++;
@@ -538,6 +550,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         if (lastJobEvent && durationMinutes !== undefined) {
           lastJobEvent.durationMinutes = (lastJobEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
         }
+        // CRITICAL: Still update previousArrivalTime so next elapsed calculation is correct
+        previousArrivalTime = arrivalTime;
         // Keep tracking this job
       } else {
         // Check if this is first time visiting this job
@@ -621,6 +635,8 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         if (lastCustomEvent && durationMinutes !== undefined) {
           lastCustomEvent.durationMinutes = (lastCustomEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
         }
+        // CRITICAL: Still update previousArrivalTime so next elapsed calculation is correct
+        previousArrivalTime = arrivalTime;
         // Keep tracking this custom location
       } else {
         events.push({
