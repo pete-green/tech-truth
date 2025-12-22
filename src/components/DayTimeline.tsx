@@ -111,6 +111,8 @@ function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEven
       return <Coffee className="w-4 h-4" />;
     case 'missing_clock_out':
       return <AlertTriangle className="w-4 h-4" />;
+    case 'overnight_at_office':
+      return <Building className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
@@ -148,6 +150,8 @@ function getEventLabel(event: TimelineEvent): string {
       return 'Meal Break Ended';
     case 'missing_clock_out':
       return 'Missing Clock-Out';
+    case 'overnight_at_office':
+      return 'Vehicle Parked at Office Overnight';
     default:
       return 'Unknown Event';
   }
@@ -270,6 +274,13 @@ function getEventStyles(event: TimelineEvent): {
         border: 'border-red-300',
         iconBg: 'bg-red-500',
         text: 'text-red-900',
+      };
+    case 'overnight_at_office':
+      return {
+        bg: 'bg-amber-50',
+        border: 'border-amber-300',
+        iconBg: 'bg-amber-500',
+        text: 'text-amber-900',
       };
     default:
       return {
@@ -677,6 +688,21 @@ export default function DayTimelineComponent({
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Overnight at office warning banner */}
+      {timeline.overnightAtOffice && (
+        <div className="px-4 py-3 border-b bg-amber-50 text-amber-800">
+          <div className="flex items-start gap-3">
+            <Building className="w-5 h-5 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium">Vehicle parked at office overnight</p>
+              <p className="text-sm text-amber-700">
+                This technician normally takes the truck home, but left it at the office. No morning departure from home.
+              </p>
+            </div>
           </div>
         </div>
       )}

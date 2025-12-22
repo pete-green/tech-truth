@@ -291,6 +291,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       firstJobOnTime: null,
       firstJobVariance: null,
       hasMissingClockOut: hasMissingClockOutOnly,
+      overnightAtOffice: false, // No GPS data to determine this
     };
   }
 
@@ -336,6 +337,27 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
 
   // Create "left" event for starting location
   const startTime = parseVerizonUtcTimestamp(firstSegment.StartDateUtc!);
+
+  // Detect overnight parking at office for take-home truck techs
+  // If tech normally takes truck home but first segment starts at office, flag it
+  let overnightAtOffice = false;
+  if (techConfig.takesTruckHome && techConfig.homeLocation) {
+    const startsAtOffice = startClassification.type === 'office';
+    const startsAtHome = startClassification.type === 'home';
+
+    if (startsAtOffice && !startsAtHome) {
+      overnightAtOffice = true;
+      // Add info event at the start of timeline
+      events.push({
+        id: `event-${eventId++}`,
+        type: 'overnight_at_office',
+        timestamp: startTime.toISOString(),
+        address: formatSegmentAddress(startLocation),
+        latitude: startLocation.Latitude,
+        longitude: startLocation.Longitude,
+      });
+    }
+  }
 
   if (startClassification.type === 'home') {
     events.push({
@@ -848,5 +870,6 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     firstJobOnTime,
     firstJobVariance,
     hasMissingClockOut,
+    overnightAtOffice,
   };
 }
