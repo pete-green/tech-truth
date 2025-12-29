@@ -16,7 +16,8 @@ export type TimelineEventType =
   | 'meal_start'
   | 'meal_end'
   | 'missing_clock_out' // Warning when tech clocked in but never clocked out
-  | 'overnight_at_office'; // Info: vehicle was parked at office overnight (take-home truck tech)
+  | 'overnight_at_office' // Info: vehicle was parked at office overnight (take-home truck tech)
+  | 'proposed_punch'; // Pending proposed punch awaiting approval
 
 export interface TimelineEvent {
   id: string;
@@ -65,6 +66,12 @@ export interface TimelineEvent {
   // Manual job association info (for jobs manually linked to GPS stops)
   isManualAssociation?: boolean;
   manualAssociationId?: string;
+
+  // Proposed punch info (for pending proposed punches)
+  proposedPunchId?: string;
+  proposedPunchType?: string; // ClockIn, ClockOut, MealStart, MealEnd
+  proposedPunchNote?: string;
+  proposedPunchStatus?: string; // pending, submitted, applied, rejected
 }
 
 export interface DayTimeline {

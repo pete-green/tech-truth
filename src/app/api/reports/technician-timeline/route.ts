@@ -413,6 +413,14 @@ export async function GET(req: NextRequest) {
       excludeFromOfficeVisits: technician.exclude_from_office_visits || false,
     };
 
+    // Fetch proposed punches for this technician on this date
+    const { data: proposedPunches } = await supabase
+      .from('proposed_punches')
+      .select('*')
+      .eq('technician_id', technicianId)
+      .eq('date', date)
+      .order('proposed_time', { ascending: true });
+
     // Build the timeline
     const timeline: DayTimeline = buildDayTimeline({
       date,
@@ -426,6 +434,25 @@ export async function GET(req: NextRequest) {
       excusedOfficeVisit,
       manualAssociations,
     });
+
+    // Add proposed punches as events in the timeline
+    if (proposedPunches && proposedPunches.length > 0) {
+      for (const pp of proposedPunches) {
+        timeline.events.push({
+          id: `proposed-${pp.id}`,
+          type: 'proposed_punch',
+          timestamp: pp.proposed_time,
+          proposedPunchId: pp.id,
+          proposedPunchType: pp.punch_type,
+          proposedPunchNote: pp.note,
+          proposedPunchStatus: pp.status,
+        });
+      }
+      // Re-sort events by timestamp after adding proposed punches
+      timeline.events.sort((a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+    }
 
     return NextResponse.json({
       success: true,

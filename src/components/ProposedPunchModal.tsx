@@ -68,6 +68,14 @@ export default function ProposedPunchModal({
     }
   }, [isOpen, technicianId, date]);
 
+  // Set default time when modal opens (date with 8:00 AM default)
+  useEffect(() => {
+    if (isOpen && date && !proposedTime) {
+      // Set default to 8:00 AM on the selected date
+      setProposedTime(`${date}T08:00`);
+    }
+  }, [isOpen, date]);
+
   // Reset form when modal closes
   useEffect(() => {
     if (!isOpen) {
@@ -275,6 +283,32 @@ export default function ProposedPunchModal({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Proposed Time
               </label>
+              {/* Quick time presets */}
+              <div className="flex flex-wrap gap-2 mb-2">
+                {[
+                  { label: '7:00 AM', time: '07:00' },
+                  { label: '8:00 AM', time: '08:00' },
+                  { label: '9:00 AM', time: '09:00' },
+                  { label: '12:00 PM', time: '12:00' },
+                  { label: '1:00 PM', time: '13:00' },
+                  { label: '4:00 PM', time: '16:00' },
+                  { label: '5:00 PM', time: '17:00' },
+                  { label: '6:00 PM', time: '18:00' },
+                ].map((preset) => (
+                  <button
+                    key={preset.time}
+                    type="button"
+                    onClick={() => setProposedTime(`${date}T${preset.time}`)}
+                    className={`px-2 py-1 text-xs rounded border transition-colors ${
+                      proposedTime === `${date}T${preset.time}`
+                        ? 'bg-orange-100 border-orange-400 text-orange-700'
+                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
               <input
                 type="datetime-local"
                 value={proposedTime}
@@ -282,7 +316,7 @@ export default function ProposedPunchModal({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
               />
               <p className="text-xs text-gray-500 mt-1">
-                The time this punch should have been recorded
+                Select a preset time above or pick a custom time
               </p>
             </div>
 

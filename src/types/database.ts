@@ -516,6 +516,88 @@ export type Database = {
           },
         ]
       }
+      proposed_punches: {
+        Row: {
+          id: string
+          technician_id: string
+          date: string
+          punch_type: string
+          proposed_time: string
+          note: string
+          status: string
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          technician_id: string
+          date: string
+          punch_type: string
+          proposed_time: string
+          note: string
+          status?: string
+          created_at?: string
+          created_by?: string
+        }
+        Update: {
+          id?: string
+          technician_id?: string
+          date?: string
+          punch_type?: string
+          proposed_time?: string
+          note?: string
+          status?: string
+          created_at?: string
+          created_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposed_punches_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      punch_annotations: {
+        Row: {
+          id: string
+          punch_record_id: string
+          annotation_type: string
+          note: string
+          proposed_time_correction: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          punch_record_id: string
+          annotation_type: string
+          note: string
+          proposed_time_correction?: string | null
+          created_at?: string
+          created_by?: string
+        }
+        Update: {
+          id?: string
+          punch_record_id?: string
+          annotation_type?: string
+          note?: string
+          proposed_time_correction?: string | null
+          created_at?: string
+          created_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "punch_annotations_punch_record_id_fkey"
+            columns: ["punch_record_id"]
+            isOneToOne: false
+            referencedRelation: "punch_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       punch_records: {
         Row: {
           can_be_excused: boolean | null
@@ -911,3 +993,5 @@ export type CustomLocationDb = Database['public']['Tables']['custom_locations'][
 export type PunchRecord = Database['public']['Tables']['punch_records']['Row'];
 export type ExcusedOfficeVisit = Database['public']['Tables']['excused_office_visits']['Row'];
 export type ManualJobAssociationDb = Database['public']['Tables']['manual_job_associations']['Row'];
+export type ProposedPunchDb = Database['public']['Tables']['proposed_punches']['Row'];
+export type PunchAnnotationDb = Database['public']['Tables']['punch_annotations']['Row'];

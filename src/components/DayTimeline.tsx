@@ -113,6 +113,8 @@ function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEven
       return <AlertTriangle className="w-4 h-4" />;
     case 'overnight_at_office':
       return <Building className="w-4 h-4" />;
+    case 'proposed_punch':
+      return <Plus className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
@@ -152,6 +154,16 @@ function getEventLabel(event: TimelineEvent): string {
       return 'Missing Clock-Out';
     case 'overnight_at_office':
       return 'Vehicle Parked at Office Overnight';
+    case 'proposed_punch':
+      const punchTypeLabel = event.proposedPunchType === 'ClockIn' ? 'Clock In' :
+                             event.proposedPunchType === 'ClockOut' ? 'Clock Out' :
+                             event.proposedPunchType === 'MealStart' ? 'Meal Start' :
+                             event.proposedPunchType === 'MealEnd' ? 'Meal End' : 'Punch';
+      const statusLabel = event.proposedPunchStatus === 'pending' ? 'Pending' :
+                          event.proposedPunchStatus === 'submitted' ? 'Submitted' :
+                          event.proposedPunchStatus === 'applied' ? 'Applied' :
+                          event.proposedPunchStatus === 'rejected' ? 'Rejected' : '';
+      return `Proposed ${punchTypeLabel} (${statusLabel})`;
     default:
       return 'Unknown Event';
   }
@@ -282,6 +294,31 @@ function getEventStyles(event: TimelineEvent): {
         iconBg: 'bg-amber-500',
         text: 'text-amber-900',
       };
+    case 'proposed_punch':
+      // Styling based on status
+      if (event.proposedPunchStatus === 'applied') {
+        return {
+          bg: 'bg-green-50',
+          border: 'border-green-300',
+          iconBg: 'bg-green-500',
+          text: 'text-green-900',
+        };
+      } else if (event.proposedPunchStatus === 'rejected') {
+        return {
+          bg: 'bg-red-50',
+          border: 'border-red-300',
+          iconBg: 'bg-red-500',
+          text: 'text-red-900',
+        };
+      } else {
+        // pending or submitted - orange/warning
+        return {
+          bg: 'bg-orange-50',
+          border: 'border-orange-300',
+          iconBg: 'bg-orange-500',
+          text: 'text-orange-900',
+        };
+      }
     default:
       return {
         bg: 'bg-gray-50',
@@ -477,6 +514,13 @@ function TimelineEventCard({
           {(event.type === 'clock_in' || event.type === 'clock_out' || event.type === 'meal_start' || event.type === 'meal_end') && event.origin && (
             <div className="text-xs text-gray-400 mt-1">
               via {event.origin}
+            </div>
+          )}
+
+          {/* Proposed punch note */}
+          {event.type === 'proposed_punch' && event.proposedPunchNote && (
+            <div className="text-sm text-gray-600 mt-1 italic">
+              &quot;{event.proposedPunchNote}&quot;
             </div>
           )}
 
