@@ -210,6 +210,55 @@ export async function getJobTypeWithCache(jobTypeId: number): Promise<{ name: st
   }
 }
 
+// ============================================
+// ESTIMATES API
+// ============================================
+
+// Get estimates for a specific job
+export async function getEstimatesByJobId(jobId: number) {
+  const endpoint = `/sales/v2/tenant/${ST_CONFIG.tenantId}/estimates?jobId=${jobId}&pageSize=50`;
+  return stFetch(endpoint);
+}
+
+// Get estimates by date range (for bulk sync)
+export async function getEstimates(params: {
+  createdOnOrAfter?: string;
+  createdBefore?: string;
+  soldAfter?: string;
+  soldBefore?: string;
+  modifiedOnOrAfter?: string;
+  modifiedBefore?: string;
+  active?: boolean;
+  page?: number;
+  pageSize?: number;
+}) {
+  const queryParams = new URLSearchParams();
+  if (params.createdOnOrAfter) queryParams.append('createdOnOrAfter', params.createdOnOrAfter);
+  if (params.createdBefore) queryParams.append('createdBefore', params.createdBefore);
+  if (params.soldAfter) queryParams.append('soldAfter', params.soldAfter);
+  if (params.soldBefore) queryParams.append('soldBefore', params.soldBefore);
+  if (params.modifiedOnOrAfter) queryParams.append('modifiedOnOrAfter', params.modifiedOnOrAfter);
+  if (params.modifiedBefore) queryParams.append('modifiedBefore', params.modifiedBefore);
+  if (params.active !== undefined) queryParams.append('active', String(params.active));
+  if (params.page) queryParams.append('page', String(params.page));
+  if (params.pageSize) queryParams.append('pageSize', String(params.pageSize));
+
+  const endpoint = `/sales/v2/tenant/${ST_CONFIG.tenantId}/estimates?${queryParams.toString()}`;
+  return stFetch(endpoint);
+}
+
+// Get a single estimate by ID
+export async function getEstimate(estimateId: number) {
+  const endpoint = `/sales/v2/tenant/${ST_CONFIG.tenantId}/estimates/${estimateId}`;
+  return stFetch(endpoint);
+}
+
+// Get estimate items (line items on an estimate)
+export async function getEstimateItems(estimateId: number) {
+  const endpoint = `/sales/v2/tenant/${ST_CONFIG.tenantId}/estimates/${estimateId}/items`;
+  return stFetch(endpoint);
+}
+
 // TypeScript interfaces for API responses
 export interface ServiceTitanLocation {
   id: number;
@@ -254,6 +303,61 @@ export interface ServiceTitanAppointmentAssignment {
   jobId: number;
   assignedOn: string;
   status: string;
+}
+
+// Estimate interfaces
+export interface ServiceTitanEstimate {
+  id: number;
+  jobId: number;
+  projectId: number | null;
+  locationId: number;
+  customerId: number;
+  name: string;
+  jobNumber: string;
+  status: {
+    name: string;
+    value: number;
+  };
+  summary: string;
+  createdOn: string;
+  modifiedOn: string;
+  soldOn: string | null;
+  soldBy: {
+    id: number;
+    name: string;
+  } | null;
+  subtotal: number;
+  tax: number;
+  total: number;
+  active: boolean;
+}
+
+export interface ServiceTitanEstimateItem {
+  id: number;
+  skuId: number;
+  skuName: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  type: string;
+  isSold: boolean;
+}
+
+export interface ServiceTitanEstimatesResponse {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  hasMore: boolean;
+  data: ServiceTitanEstimate[];
+}
+
+export interface ServiceTitanEstimateItemsResponse {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  hasMore: boolean;
+  data: ServiceTitanEstimateItem[];
 }
 
 export { ST_CONFIG };

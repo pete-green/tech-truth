@@ -72,6 +72,47 @@ export interface TimelineEvent {
   proposedPunchType?: string; // ClockIn, ClockOut, MealStart, MealEnd
   proposedPunchNote?: string;
   proposedPunchStatus?: string; // pending, submitted, applied, rejected
+
+  // Estimate info (for arrived_job events)
+  estimateSummary?: JobEstimateSummary;
+  estimates?: EstimateDetail[];
+}
+
+// Summary of estimates for a job (shown on job card)
+export interface JobEstimateSummary {
+  totalEstimates: number;
+  soldEstimates: number;
+  unsoldEstimates: number;
+  totalValue: number;
+  soldValue: number;
+  unsoldValue: number;
+  minutesToFirstEstimate: number | null;
+  minutesToFirstSale: number | null;
+}
+
+// Full estimate detail (for expandable view)
+export interface EstimateDetail {
+  id: string;
+  estimateNumber: string | null;
+  name: string | null;
+  status: string;
+  isSold: boolean;
+  total: number | null;
+  soldAt: string | null;
+  minutesFromArrival: number | null;
+  items: EstimateItemDetail[];
+}
+
+// Line item on an estimate
+export interface EstimateItemDetail {
+  id: string;
+  skuName: string | null;
+  description: string | null;
+  quantity: number;
+  unitPrice: number | null;
+  totalPrice: number | null;
+  itemType: string | null;
+  isSold: boolean;
 }
 
 export interface DayTimeline {

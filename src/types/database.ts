@@ -130,6 +130,149 @@ export type Database = {
         }
         Relationships: []
       }
+      estimate_items: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          estimate_id: string
+          id: string
+          is_sold: boolean | null
+          item_type: string | null
+          quantity: number | null
+          raw_data: Json | null
+          sku_id: number | null
+          sku_name: string | null
+          st_item_id: number | null
+          total_price: number | null
+          unit_price: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          estimate_id: string
+          id?: string
+          is_sold?: boolean | null
+          item_type?: string | null
+          quantity?: number | null
+          raw_data?: Json | null
+          sku_id?: number | null
+          sku_name?: string | null
+          st_item_id?: number | null
+          total_price?: number | null
+          unit_price?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          estimate_id?: string
+          id?: string
+          is_sold?: boolean | null
+          item_type?: string | null
+          quantity?: number | null
+          raw_data?: Json | null
+          sku_id?: number | null
+          sku_name?: string | null
+          st_item_id?: number | null
+          total_price?: number | null
+          unit_price?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "estimate_items_estimate_id_fkey"
+            columns: ["estimate_id"]
+            isOneToOne: false
+            referencedRelation: "estimates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      estimates: {
+        Row: {
+          created_at: string | null
+          created_at_st: string | null
+          estimate_number: string | null
+          id: string
+          is_sold: boolean | null
+          job_id: string | null
+          minutes_from_arrival_to_creation: number | null
+          minutes_from_arrival_to_sale: number | null
+          name: string | null
+          raw_data: Json | null
+          sold_at: string | null
+          sold_by_name: string | null
+          sold_by_technician_id: string | null
+          st_estimate_id: number
+          st_job_id: number
+          status: string | null
+          subtotal: number | null
+          tax: number | null
+          technician_id: string | null
+          total: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_at_st?: string | null
+          estimate_number?: string | null
+          id?: string
+          is_sold?: boolean | null
+          job_id?: string | null
+          minutes_from_arrival_to_creation?: number | null
+          minutes_from_arrival_to_sale?: number | null
+          name?: string | null
+          raw_data?: Json | null
+          sold_at?: string | null
+          sold_by_name?: string | null
+          sold_by_technician_id?: string | null
+          st_estimate_id: number
+          st_job_id: number
+          status?: string | null
+          subtotal?: number | null
+          tax?: number | null
+          technician_id?: string | null
+          total?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_at_st?: string | null
+          estimate_number?: string | null
+          id?: string
+          is_sold?: boolean | null
+          job_id?: string | null
+          minutes_from_arrival_to_creation?: number | null
+          minutes_from_arrival_to_sale?: number | null
+          name?: string | null
+          raw_data?: Json | null
+          sold_at?: string | null
+          sold_by_name?: string | null
+          sold_by_technician_id?: string | null
+          st_estimate_id?: number
+          st_job_id?: number
+          status?: string | null
+          subtotal?: number | null
+          tax?: number | null
+          technician_id?: string | null
+          total?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "estimates_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "estimates_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       excused_office_visits: {
         Row: {
           created_at: string | null
@@ -995,3 +1138,5 @@ export type ExcusedOfficeVisit = Database['public']['Tables']['excused_office_vi
 export type ManualJobAssociationDb = Database['public']['Tables']['manual_job_associations']['Row'];
 export type ProposedPunchDb = Database['public']['Tables']['proposed_punches']['Row'];
 export type PunchAnnotationDb = Database['public']['Tables']['punch_annotations']['Row'];
+export type EstimateDb = Database['public']['Tables']['estimates']['Row'];
+export type EstimateItemDb = Database['public']['Tables']['estimate_items']['Row'];

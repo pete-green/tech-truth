@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase';
 import { getVehicleSegments } from '@/lib/verizon-connect';
 import { buildDayTimeline } from '@/lib/timeline-builder';
 import { JobDetail } from '@/types/reports';
-import { TechTimelineConfig, DayTimeline, TimelinePunchRecord, ManualJobAssociation } from '@/types/timeline';
+import { TechTimelineConfig, DayTimeline, TimelinePunchRecord, ManualJobAssociation, JobEstimateSummary, EstimateDetail, EstimateItemDetail } from '@/types/timeline';
 import { CustomLocationRow, rowToCustomLocation } from '@/types/custom-location';
 import { OFFICE_LOCATION } from '@/lib/geo-utils';
 import { parseISO, differenceInMinutes, addDays, format } from 'date-fns';
@@ -452,6 +452,112 @@ export async function GET(req: NextRequest) {
       timeline.events.sort((a, b) =>
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
+    }
+
+    // Enrich job events with estimate data
+    const jobEvents = timeline.events.filter(e => e.type === 'arrived_job' && e.jobId);
+    if (jobEvents.length > 0) {
+      const jobIds = jobEvents.map(e => e.jobId!);
+
+      // Fetch all estimates for these jobs with their items
+      const { data: estimatesData } = await supabase
+        .from('estimates')
+        .select(`
+          id,
+          job_id,
+          estimate_number,
+          name,
+          status,
+          is_sold,
+          total,
+          sold_at,
+          minutes_from_arrival_to_creation,
+          minutes_from_arrival_to_sale,
+          estimate_items (
+            id,
+            sku_name,
+            description,
+            quantity,
+            unit_price,
+            total_price,
+            item_type,
+            is_sold
+          )
+        `)
+        .in('job_id', jobIds);
+
+      if (estimatesData && estimatesData.length > 0) {
+        // Group estimates by job_id
+        const estimatesByJob = new Map<string, typeof estimatesData>();
+        for (const est of estimatesData) {
+          if (!est.job_id) continue;
+          const existing = estimatesByJob.get(est.job_id) || [];
+          existing.push(est);
+          estimatesByJob.set(est.job_id, existing);
+        }
+
+        // Attach estimates to each job event
+        for (const event of jobEvents) {
+          if (!event.jobId) continue;
+          const jobEstimates = estimatesByJob.get(event.jobId);
+
+          if (jobEstimates && jobEstimates.length > 0) {
+            // Calculate summary
+            const soldEstimates = jobEstimates.filter(e => e.is_sold);
+            const unsoldEstimates = jobEstimates.filter(e => !e.is_sold);
+
+            const summary: JobEstimateSummary = {
+              totalEstimates: jobEstimates.length,
+              soldEstimates: soldEstimates.length,
+              unsoldEstimates: unsoldEstimates.length,
+              totalValue: jobEstimates.reduce((sum, e) => sum + (e.total || 0), 0),
+              soldValue: soldEstimates.reduce((sum, e) => sum + (e.total || 0), 0),
+              unsoldValue: unsoldEstimates.reduce((sum, e) => sum + (e.total || 0), 0),
+              minutesToFirstEstimate: Math.min(
+                ...jobEstimates
+                  .map(e => e.minutes_from_arrival_to_creation)
+                  .filter((m): m is number => m !== null && m >= 0)
+              ) || null,
+              minutesToFirstSale: soldEstimates.length > 0
+                ? Math.min(
+                    ...soldEstimates
+                      .map(e => e.minutes_from_arrival_to_sale)
+                      .filter((m): m is number => m !== null && m >= 0)
+                  ) || null
+                : null,
+            };
+
+            // Handle Infinity from Math.min on empty array
+            if (summary.minutesToFirstEstimate === Infinity) summary.minutesToFirstEstimate = null;
+            if (summary.minutesToFirstSale === Infinity) summary.minutesToFirstSale = null;
+
+            // Build detailed estimates with items
+            const details: EstimateDetail[] = jobEstimates.map(est => ({
+              id: est.id,
+              estimateNumber: est.estimate_number,
+              name: est.name,
+              status: est.status || 'Unknown',
+              isSold: est.is_sold || false,
+              total: est.total,
+              soldAt: est.sold_at,
+              minutesFromArrival: est.minutes_from_arrival_to_creation,
+              items: (est.estimate_items || []).map((item: any) => ({
+                id: item.id,
+                skuName: item.sku_name,
+                description: item.description,
+                quantity: item.quantity || 1,
+                unitPrice: item.unit_price,
+                totalPrice: item.total_price,
+                itemType: item.item_type,
+                isSold: item.is_sold || false,
+              })),
+            }));
+
+            event.estimateSummary = summary;
+            event.estimates = details;
+          }
+        }
+      }
     }
 
     return NextResponse.json({

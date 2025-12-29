@@ -1,7 +1,8 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2, MessageSquare, Plus } from 'lucide-react';
+import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2, MessageSquare, Plus, DollarSign, ChevronDown, ChevronUp, Package } from 'lucide-react';
+import { useState } from 'react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 import { getCategoryIcon, getCategoryColors } from '@/lib/location-logos';
 
@@ -82,6 +83,129 @@ function formatGpsLocationType(locationType: string): string {
       // Capitalize first letter and replace underscores with spaces
       return locationType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
+}
+
+// Estimate Summary Badge with expandable details
+function EstimateSummaryBadge({ event }: { event: TimelineEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const summary = event.estimateSummary;
+  const estimates = event.estimates;
+
+  if (!summary) return null;
+
+  const formatCurrency = (amount: number | null) => {
+    if (amount === null || amount === undefined) return '$0';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+  };
+
+  return (
+    <div className="mt-2">
+      {/* Summary badges */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Sold/Total badge */}
+        <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded font-medium ${
+          summary.soldEstimates > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+        }`}>
+          <DollarSign className="w-3 h-3" />
+          {summary.soldEstimates}/{summary.totalEstimates} sold
+        </span>
+
+        {/* Revenue */}
+        {summary.soldValue > 0 && (
+          <span className="text-xs text-green-600 font-medium">
+            {formatCurrency(summary.soldValue)} revenue
+          </span>
+        )}
+
+        {/* Unsold value */}
+        {summary.unsoldValue > 0 && (
+          <span className="text-xs text-gray-500">
+            {formatCurrency(summary.unsoldValue)} unsold
+          </span>
+        )}
+
+        {/* Time to first estimate */}
+        {summary.minutesToFirstEstimate !== null && (
+          <span className={`text-xs ${summary.minutesToFirstEstimate < 30 ? 'text-orange-600' : 'text-gray-500'}`}>
+            Est in {summary.minutesToFirstEstimate}m
+          </span>
+        )}
+      </div>
+
+      {/* Expand/Collapse button */}
+      {estimates && estimates.length > 0 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+        >
+          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          {expanded ? 'Hide' : 'Show'} estimate details
+        </button>
+      )}
+
+      {/* Expanded estimate details */}
+      {expanded && estimates && (
+        <div className="mt-2 space-y-2 border-t border-gray-200 pt-2">
+          {estimates.map((est) => (
+            <div
+              key={est.id}
+              className={`p-2 rounded border text-sm ${
+                est.isSold ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+              }`}
+            >
+              {/* Estimate header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-gray-900">
+                    {est.name || `Estimate #${est.estimateNumber}`}
+                  </span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                    est.isSold ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-600'
+                  }`}>
+                    {est.isSold ? 'SOLD' : est.status}
+                  </span>
+                </div>
+                <span className="font-medium text-gray-900">
+                  {formatCurrency(est.total)}
+                </span>
+              </div>
+
+              {/* Timing info */}
+              {est.minutesFromArrival !== null && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Created {est.minutesFromArrival}m after arrival
+                  {est.isSold && est.soldAt && ` • Sold at ${format(parseISO(est.soldAt), 'h:mm a')}`}
+                </div>
+              )}
+
+              {/* Line items */}
+              {est.items && est.items.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {est.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`flex items-center justify-between text-xs pl-2 border-l-2 ${
+                        item.isSold ? 'border-green-400 text-green-700' : 'border-gray-300 text-gray-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1">
+                        <Package className="w-3 h-3" />
+                        <span>{item.quantity}x {item.skuName || item.description || 'Item'}</span>
+                        {item.itemType && (
+                          <span className="text-gray-400">({item.itemType})</span>
+                        )}
+                      </div>
+                      <span>{formatCurrency(item.totalPrice)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEvent['type']; isUnnecessary?: boolean; customCategory?: string }) {
@@ -483,6 +607,11 @@ function TimelineEventCard({
             <div className="text-xs text-gray-500 mt-1">
               Scheduled: {format(parseISO(event.scheduledTime), 'h:mm a')}
             </div>
+          )}
+
+          {/* Estimate Summary for job arrivals */}
+          {event.type === 'arrived_job' && event.estimateSummary && (
+            <EstimateSummaryBadge event={event} />
           )}
 
           {/* Violation reason for clock events */}
