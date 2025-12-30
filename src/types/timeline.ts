@@ -76,6 +76,9 @@ export interface TimelineEvent {
   // Estimate info (for arrived_job events)
   estimateSummary?: JobEstimateSummary;
   estimates?: EstimateDetail[];
+
+  // Transit analysis (for arrived_job events - shows trip from previous job)
+  transitAnalysis?: TransitAnalysis;
 }
 
 // Summary of estimates for a job (shown on job card)
@@ -113,6 +116,21 @@ export interface EstimateItemDetail {
   totalPrice: number | null;
   itemType: string | null;
   isSold: boolean;
+}
+
+// Transit analysis between jobs (to detect detours/time theft)
+export interface TransitAnalysis {
+  fromJobNumber: string;
+  toJobNumber: string;
+  fromAddress: string;
+  toAddress: string;
+  expectedDriveMinutes: number;      // Google Directions estimate
+  actualElapsedMinutes: number;      // Total time from left_job to arrived_job
+  mealBreakMinutes: number;          // Total meal breaks in between
+  onClockTransitMinutes: number;     // actualElapsed - mealBreaks
+  excessMinutes: number;             // onClockTransit - expectedDrive
+  isSuspicious: boolean;             // excessMinutes >= 15 min
+  distanceMiles: number;             // Expected distance
 }
 
 export interface DayTimeline {

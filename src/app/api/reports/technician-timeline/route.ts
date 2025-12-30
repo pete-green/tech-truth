@@ -3,7 +3,8 @@ import { createServerClient } from '@/lib/supabase';
 import { getVehicleSegments } from '@/lib/verizon-connect';
 import { buildDayTimeline } from '@/lib/timeline-builder';
 import { JobDetail } from '@/types/reports';
-import { TechTimelineConfig, DayTimeline, TimelinePunchRecord, ManualJobAssociation, JobEstimateSummary, EstimateDetail, EstimateItemDetail } from '@/types/timeline';
+import { TechTimelineConfig, DayTimeline, TimelinePunchRecord, ManualJobAssociation, JobEstimateSummary, EstimateDetail, EstimateItemDetail, TransitAnalysis } from '@/types/timeline';
+import { getDrivingDuration } from '@/lib/google-directions';
 import { CustomLocationRow, rowToCustomLocation } from '@/types/custom-location';
 import { OFFICE_LOCATION } from '@/lib/geo-utils';
 import { parseISO, differenceInMinutes, addDays, format } from 'date-fns';
@@ -556,6 +557,85 @@ export async function GET(req: NextRequest) {
             event.estimateSummary = summary;
             event.estimates = details;
           }
+        }
+      }
+    }
+
+    // Calculate transit analysis for job-to-job transitions
+    // Find pairs of left_job -> arrived_job and calculate expected vs actual drive time
+    const events = timeline.events;
+    for (let i = 0; i < events.length; i++) {
+      const currentEvent = events[i];
+
+      // Only process arrived_job events
+      if (currentEvent.type !== 'arrived_job') continue;
+
+      // Find the most recent left_job event before this arrived_job
+      let leftJobEvent = null;
+      let mealBreakMinutes = 0;
+
+      for (let j = i - 1; j >= 0; j--) {
+        const prevEvent = events[j];
+
+        // Track meal breaks between jobs
+        if (prevEvent.type === 'meal_end') {
+          // Find the corresponding meal_start
+          for (let k = j - 1; k >= 0; k--) {
+            if (events[k].type === 'meal_start') {
+              const mealStart = parseISO(events[k].timestamp);
+              const mealEnd = parseISO(prevEvent.timestamp);
+              mealBreakMinutes += differenceInMinutes(mealEnd, mealStart);
+              break;
+            }
+          }
+        }
+
+        // Found left_job - this is our starting point
+        if (prevEvent.type === 'left_job') {
+          leftJobEvent = prevEvent;
+          break;
+        }
+
+        // If we hit another arrived_job before finding left_job, stop
+        if (prevEvent.type === 'arrived_job') break;
+      }
+
+      // If we found a left_job before this arrived_job, calculate transit analysis
+      if (leftJobEvent && leftJobEvent.latitude && leftJobEvent.longitude &&
+          currentEvent.latitude && currentEvent.longitude) {
+
+        const leftTime = parseISO(leftJobEvent.timestamp);
+        const arrivedTime = parseISO(currentEvent.timestamp);
+        const actualElapsedMinutes = differenceInMinutes(arrivedTime, leftTime);
+
+        // Get expected drive time from Google Directions
+        const directionsResult = await getDrivingDuration(
+          leftJobEvent.latitude,
+          leftJobEvent.longitude,
+          currentEvent.latitude,
+          currentEvent.longitude
+        );
+
+        if (directionsResult.status === 'ok') {
+          const expectedDriveMinutes = directionsResult.durationMinutes;
+          const onClockTransitMinutes = actualElapsedMinutes - mealBreakMinutes;
+          const excessMinutes = onClockTransitMinutes - expectedDriveMinutes;
+
+          const transitAnalysis: TransitAnalysis = {
+            fromJobNumber: leftJobEvent.jobNumber || 'Unknown',
+            toJobNumber: currentEvent.jobNumber || 'Unknown',
+            fromAddress: leftJobEvent.address || 'Unknown',
+            toAddress: currentEvent.address || 'Unknown',
+            expectedDriveMinutes,
+            actualElapsedMinutes,
+            mealBreakMinutes,
+            onClockTransitMinutes,
+            excessMinutes,
+            isSuspicious: excessMinutes >= 15,
+            distanceMiles: directionsResult.distanceMiles,
+          };
+
+          currentEvent.transitAnalysis = transitAnalysis;
         }
       }
     }

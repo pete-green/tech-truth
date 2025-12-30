@@ -1,7 +1,7 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2, MessageSquare, Plus, DollarSign, ChevronDown, ChevronUp, Package } from 'lucide-react';
+import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2, MessageSquare, Plus, DollarSign, ChevronDown, ChevronUp, Package, Timer } from 'lucide-react';
 import { useState } from 'react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 import { getCategoryIcon, getCategoryColors } from '@/lib/location-logos';
@@ -204,6 +204,60 @@ function EstimateSummaryBadge({ event }: { event: TimelineEvent }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Transit Alert Badge for job-to-job travel time analysis
+function TransitAlertBadge({ event }: { event: TimelineEvent }) {
+  const analysis = event.transitAnalysis;
+
+  if (!analysis || !analysis.isSuspicious) return null;
+
+  // Determine severity color based on excess minutes
+  // Yellow: 15-30 minutes excess
+  // Red: > 30 minutes excess
+  const isRed = analysis.excessMinutes >= 30;
+
+  return (
+    <div className={`mt-3 p-3 rounded-lg border ${
+      isRed
+        ? 'bg-red-50 border-red-300'
+        : 'bg-yellow-50 border-yellow-300'
+    }`}>
+      <div className="flex items-start gap-2">
+        <Timer className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isRed ? 'text-red-500' : 'text-yellow-600'}`} />
+        <div className="flex-1">
+          <div className={`font-medium text-sm ${isRed ? 'text-red-700' : 'text-yellow-700'}`}>
+            Transit Time Alert
+          </div>
+          <div className="mt-1 text-xs space-y-1">
+            <div className="flex items-center justify-between text-gray-600">
+              <span>Expected drive time:</span>
+              <span className="font-medium">{formatDuration(analysis.expectedDriveMinutes)}</span>
+            </div>
+            <div className="flex items-center justify-between text-gray-600">
+              <span>Actual transit (on-clock):</span>
+              <span className="font-medium">{formatDuration(analysis.onClockTransitMinutes)}</span>
+            </div>
+            {analysis.mealBreakMinutes > 0 && (
+              <div className="flex items-center justify-between text-gray-500 italic">
+                <span>Meal break (excluded):</span>
+                <span>{formatDuration(analysis.mealBreakMinutes)}</span>
+              </div>
+            )}
+            <div className={`flex items-center justify-between font-medium pt-1 border-t ${
+              isRed ? 'text-red-700 border-red-200' : 'text-yellow-700 border-yellow-200'
+            }`}>
+              <span>Excess time:</span>
+              <span>+{formatDuration(analysis.excessMinutes)}</span>
+            </div>
+          </div>
+          <div className={`mt-2 text-xs ${isRed ? 'text-red-600' : 'text-yellow-600'}`}>
+            From Job #{analysis.fromJobNumber} ({analysis.distanceMiles} mi direct)
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -612,6 +666,11 @@ function TimelineEventCard({
           {/* Estimate Summary for job arrivals */}
           {event.type === 'arrived_job' && event.estimateSummary && (
             <EstimateSummaryBadge event={event} />
+          )}
+
+          {/* Transit Time Alert for suspicious job-to-job travel */}
+          {event.type === 'arrived_job' && event.transitAnalysis?.isSuspicious && (
+            <TransitAlertBadge event={event} />
           )}
 
           {/* Violation reason for clock events */}
