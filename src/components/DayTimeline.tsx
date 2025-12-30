@@ -314,6 +314,8 @@ function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEven
       return <Building className="w-4 h-4" />;
     case 'proposed_punch':
       return <Plus className="w-4 h-4" />;
+    case 'material_checkout':
+      return <Package className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
@@ -363,6 +365,8 @@ function getEventLabel(event: TimelineEvent): string {
                           event.proposedPunchStatus === 'applied' ? 'Applied' :
                           event.proposedPunchStatus === 'rejected' ? 'Rejected' : '';
       return `Proposed ${punchTypeLabel} (${statusLabel})`;
+    case 'material_checkout':
+      return `Material Checkout (${event.checkoutTotalItems || 0} items)`;
     default:
       return 'Unknown Event';
   }
@@ -518,6 +522,13 @@ function getEventStyles(event: TimelineEvent): {
           text: 'text-orange-900',
         };
       }
+    case 'material_checkout':
+      return {
+        bg: 'bg-indigo-50',
+        border: 'border-indigo-200',
+        iconBg: 'bg-indigo-500',
+        text: 'text-indigo-900',
+      };
     default:
       return {
         bg: 'bg-gray-50',
@@ -725,6 +736,41 @@ function TimelineEventCard({
           {event.type === 'proposed_punch' && event.proposedPunchNote && (
             <div className="text-sm text-gray-600 mt-1 italic">
               &quot;{event.proposedPunchNote}&quot;
+            </div>
+          )}
+
+          {/* Material checkout details */}
+          {event.type === 'material_checkout' && (
+            <div className="mt-2">
+              {/* Truck and PO info */}
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                {event.checkoutTruckNumber && (
+                  <span>Truck #{event.checkoutTruckNumber}</span>
+                )}
+                {event.checkoutPoNumber && (
+                  <span>PO #{event.checkoutPoNumber}</span>
+                )}
+                <span>{event.checkoutTotalQuantity || 0} total qty</span>
+              </div>
+
+              {/* Item list */}
+              {event.checkoutItems && event.checkoutItems.length > 0 && (
+                <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                  {event.checkoutItems.map((item, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-xs bg-white/50 rounded px-2 py-1">
+                      <span className="font-mono text-indigo-600 flex-shrink-0">
+                        {item.quantity}x
+                      </span>
+                      <div className="min-w-0">
+                        <span className="font-medium text-gray-700">{item.partNumber}</span>
+                        <span className="text-gray-500 ml-1 truncate block">
+                          {item.description}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

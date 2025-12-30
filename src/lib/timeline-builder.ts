@@ -292,6 +292,7 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
       firstJobVariance: null,
       hasMissingClockOut: hasMissingClockOutOnly,
       overnightAtOffice: false, // No GPS data to determine this
+      totalMaterialCheckouts: 0, // Will be set by API route after fetching
     };
   }
 
@@ -871,5 +872,6 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
     firstJobVariance,
     hasMissingClockOut,
     overnightAtOffice,
+    totalMaterialCheckouts: 0, // Will be set by API route after fetching
   };
 }

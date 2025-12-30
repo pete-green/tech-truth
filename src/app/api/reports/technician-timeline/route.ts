@@ -3,11 +3,12 @@ import { createServerClient } from '@/lib/supabase';
 import { getVehicleSegments } from '@/lib/verizon-connect';
 import { buildDayTimeline } from '@/lib/timeline-builder';
 import { JobDetail } from '@/types/reports';
-import { TechTimelineConfig, DayTimeline, TimelinePunchRecord, ManualJobAssociation, JobEstimateSummary, EstimateDetail, EstimateItemDetail, TransitAnalysis } from '@/types/timeline';
+import { TechTimelineConfig, DayTimeline, TimelinePunchRecord, ManualJobAssociation, JobEstimateSummary, EstimateDetail, EstimateItemDetail, TransitAnalysis, MaterialCheckoutItemDetail } from '@/types/timeline';
 import { getDrivingDuration } from '@/lib/google-directions';
 import { CustomLocationRow, rowToCustomLocation } from '@/types/custom-location';
 import { OFFICE_LOCATION } from '@/lib/geo-utils';
 import { parseISO, differenceInMinutes, addDays, format } from 'date-fns';
+import { getMaterialCheckouts } from '@/lib/material-checkout';
 
 export const dynamic = 'force-dynamic';
 
@@ -449,11 +450,51 @@ export async function GET(req: NextRequest) {
           proposedPunchStatus: pp.status,
         });
       }
-      // Re-sort events by timestamp after adding proposed punches
-      timeline.events.sort((a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
     }
+
+    // Fetch material checkouts from the inventory system
+    let materialCheckoutCount = 0;
+    try {
+      const materialCheckouts = await getMaterialCheckouts(technician.name, date);
+
+      if (materialCheckouts.length > 0) {
+        materialCheckoutCount = materialCheckouts.length;
+        console.log(`[Timeline] Found ${materialCheckouts.length} material checkout(s) for ${technician.name} on ${date}`);
+
+        for (const checkout of materialCheckouts) {
+          const checkoutItems: MaterialCheckoutItemDetail[] = checkout.items.map(item => ({
+            partId: item.partId,
+            partNumber: item.partNumber,
+            description: item.description,
+            quantity: item.quantity,
+          }));
+
+          timeline.events.push({
+            id: `checkout-${checkout.transactionGroup}`,
+            type: 'material_checkout',
+            timestamp: checkout.timestamp,
+            checkoutId: checkout.id,
+            checkoutTransactionGroup: checkout.transactionGroup,
+            checkoutTruckNumber: checkout.truckNumber,
+            checkoutPoNumber: checkout.poNumber || undefined,
+            checkoutTotalItems: checkout.totalItems,
+            checkoutTotalQuantity: checkout.totalQuantity,
+            checkoutItems: checkoutItems,
+          });
+        }
+      }
+    } catch (checkoutError: any) {
+      console.error('[Timeline] Error fetching material checkouts:', checkoutError);
+      // Continue without material checkouts - non-critical feature
+    }
+
+    // Update timeline summary with material checkout count
+    timeline.totalMaterialCheckouts = materialCheckoutCount;
+
+    // Re-sort events by timestamp after adding proposed punches and material checkouts
+    timeline.events.sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
 
     // Enrich job events with estimate data
     const jobEvents = timeline.events.filter(e => e.type === 'arrived_job' && e.jobId);

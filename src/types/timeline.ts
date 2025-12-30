@@ -17,7 +17,8 @@ export type TimelineEventType =
   | 'meal_end'
   | 'missing_clock_out' // Warning when tech clocked in but never clocked out
   | 'overnight_at_office' // Info: vehicle was parked at office overnight (take-home truck tech)
-  | 'proposed_punch'; // Pending proposed punch awaiting approval
+  | 'proposed_punch' // Pending proposed punch awaiting approval
+  | 'material_checkout'; // Material/parts checked out from shop inventory
 
 export interface TimelineEvent {
   id: string;
@@ -79,6 +80,15 @@ export interface TimelineEvent {
 
   // Transit analysis (for arrived_job events - shows trip from previous job)
   transitAnalysis?: TransitAnalysis;
+
+  // Material checkout info (for material_checkout events)
+  checkoutId?: string;
+  checkoutTransactionGroup?: string;
+  checkoutTruckNumber?: string;
+  checkoutPoNumber?: string;
+  checkoutTotalItems?: number;
+  checkoutTotalQuantity?: number;
+  checkoutItems?: MaterialCheckoutItemDetail[];
 }
 
 // Summary of estimates for a job (shown on job card)
@@ -133,6 +143,14 @@ export interface TransitAnalysis {
   distanceMiles: number;             // Expected distance
 }
 
+// Material checkout line item detail
+export interface MaterialCheckoutItemDetail {
+  partId: string;
+  partNumber: string;
+  description: string;
+  quantity: number;
+}
+
 export interface DayTimeline {
   date: string;
   dayOfWeek: string;
@@ -148,6 +166,7 @@ export interface DayTimeline {
   firstJobVariance: number | null;
   hasMissingClockOut: boolean; // True if tech clocked in but never clocked out
   overnightAtOffice: boolean; // True if take-home truck was parked at office overnight
+  totalMaterialCheckouts: number; // Number of material checkout transactions
 }
 
 // Tech configuration for timeline building
@@ -212,4 +231,5 @@ export interface TimelineInput {
     reason: string;
     notes?: string;
   };
+  materialCheckouts?: import('../lib/material-checkout').MaterialCheckout[];
 }
