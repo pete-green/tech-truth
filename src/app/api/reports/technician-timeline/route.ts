@@ -493,6 +493,7 @@ export async function GET(req: NextRequest) {
             checkoutTotalItems: request.totalItems,
             checkoutTotalQuantity: request.totalQuantity,
             checkoutItems: requestItems,
+            checkoutTechName: request.techName,
           });
         }
       }
@@ -540,6 +541,7 @@ export async function GET(req: NextRequest) {
             checkoutTotalItems: checkout.totalItems,
             checkoutTotalQuantity: checkout.totalQuantity,
             checkoutItems: checkoutItems,
+            checkoutTechName: checkout.techName,
           });
         }
 

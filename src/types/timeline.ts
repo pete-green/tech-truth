@@ -97,6 +97,7 @@ export interface TimelineEvent {
   deliveryMethod?: 'delivery' | 'pickup';
   deliveryAddress?: string;
   requestStatus?: string;
+  checkoutTechName?: string; // Name of person who performed the checkout/request
 }
 
 // Summary of estimates for a job (shown on job card)

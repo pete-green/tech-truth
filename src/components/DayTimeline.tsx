@@ -807,8 +807,11 @@ function TimelineEventCard({
                 </div>
               )}
 
-              {/* Truck and PO info */}
-              <div className="flex items-center gap-3 text-xs text-gray-500">
+              {/* Tech name, Truck and PO info */}
+              <div className="flex items-center flex-wrap gap-3 text-xs text-gray-500">
+                {event.checkoutTechName && (
+                  <span className="font-medium text-gray-700">By: {event.checkoutTechName}</span>
+                )}
                 {event.checkoutTruckNumber && (
                   <span>Truck #{event.checkoutTruckNumber}</span>
                 )}
