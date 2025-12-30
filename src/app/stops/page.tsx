@@ -584,19 +584,19 @@ export default function StopDetailsPage() {
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
-        <div className="flex flex-wrap items-end gap-4">
+      <div className="bg-gradient-to-r from-slate-50 to-blue-50 rounded-2xl shadow-md border border-slate-200/60 p-6 mb-6">
+        <div className="flex flex-wrap items-end gap-5">
           {/* Technician Selector */}
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              <User className="w-4 h-4 inline mr-1" />
+          <div className="flex-1 min-w-[220px]">
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <User className="w-4 h-4 inline mr-1.5 text-blue-600" />
               Technician
             </label>
             <select
               value={selectedTechId}
               onChange={(e) => setSelectedTechId(e.target.value)}
               disabled={loadingTechs}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all hover:border-slate-300 shadow-sm"
             >
               <option value="">Select a technician...</option>
               {technicians.map((tech) => (
@@ -609,22 +609,22 @@ export default function StopDetailsPage() {
 
           {/* Start Date */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              <Calendar className="w-4 h-4 inline mr-1" />
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <Calendar className="w-4 h-4 inline mr-1.5 text-blue-600" />
               Start Date
             </label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="bg-white border-2 border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all hover:border-slate-300 shadow-sm"
             />
           </div>
 
           {/* End Date */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              <Calendar className="w-4 h-4 inline mr-1" />
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <Calendar className="w-4 h-4 inline mr-1.5 text-blue-600" />
               End Date
             </label>
             <input
@@ -632,7 +632,7 @@ export default function StopDetailsPage() {
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               min={startDate}
-              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="bg-white border-2 border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all hover:border-slate-300 shadow-sm"
             />
           </div>
 
@@ -640,7 +640,7 @@ export default function StopDetailsPage() {
           <button
             onClick={fetchTimelines}
             disabled={!selectedTechId || !startDate || !endDate || loading}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-lg transition-all duration-200"
           >
             {loading ? (
               <>
@@ -659,67 +659,92 @@ export default function StopDetailsPage() {
 
       {/* Error Alert */}
       {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-2 text-red-700">
-          <AlertTriangle className="w-5 h-5" />
-          <span>{error}</span>
+        <div className="mb-6 bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-center gap-3 text-red-700 shadow-sm">
+          <div className="p-2 bg-red-100 rounded-full">
+            <AlertTriangle className="w-5 h-5" />
+          </div>
+          <span className="font-medium">{error}</span>
         </div>
       )}
 
       {/* Content Area */}
       {!selectedTechId ? (
-        <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
-          <User className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500 text-lg">Select a technician to view their stops</p>
-          <p className="text-gray-400 text-sm mt-1">
-            Choose a technician from the dropdown above and click &quot;Load Timeline&quot;
+        <div className="bg-gradient-to-b from-white to-slate-50 rounded-2xl shadow-md border border-slate-200 p-16 text-center">
+          <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <User className="w-10 h-10 text-slate-400" />
+          </div>
+          <p className="text-slate-700 text-xl font-semibold">Select a technician to view their stops</p>
+          <p className="text-slate-500 mt-2 max-w-md mx-auto">
+            Choose a technician from the dropdown above and click &quot;Load Timeline&quot; to see their daily activities
           </p>
         </div>
       ) : loading ? (
-        <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
-          <RefreshCw className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
-          <p className="text-gray-500">Loading timeline data...</p>
+        <div className="bg-gradient-to-b from-white to-blue-50 rounded-2xl shadow-md border border-blue-100 p-16 text-center">
+          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
+          </div>
+          <p className="text-slate-700 text-lg font-medium">Loading timeline data...</p>
+          <p className="text-slate-500 mt-1">Fetching GPS segments and job information</p>
         </div>
       ) : timelines.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
-          <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500 text-lg">No GPS data found</p>
-          <p className="text-gray-400 text-sm mt-1">
-            Click &quot;Load Timeline&quot; to fetch data, or try a different date range
+        <div className="bg-gradient-to-b from-white to-amber-50 rounded-2xl shadow-md border border-amber-100 p-16 text-center">
+          <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <MapPin className="w-10 h-10 text-amber-500" />
+          </div>
+          <p className="text-slate-700 text-xl font-semibold">No GPS data found</p>
+          <p className="text-slate-500 mt-2 max-w-md mx-auto">
+            Click &quot;Load Timeline&quot; to fetch data, or try selecting a different date range
           </p>
         </div>
       ) : (
         <>
           {/* Summary Header */}
-          <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="bg-gradient-to-r from-white to-slate-50 rounded-2xl shadow-md border border-slate-200 p-6 mb-6">
+            <div className="flex flex-wrap items-start justify-between gap-6">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
+                <h2 className="text-xl font-bold text-slate-900">
                   Timeline for {selectedTech?.name}
                 </h2>
-                <p className="text-sm text-gray-500">
-                  {format(parseISO(startDate), 'MMM d, yyyy')}
-                  {startDate !== endDate && ` - ${format(parseISO(endDate), 'MMM d, yyyy')}`}
+                <p className="text-sm text-slate-500 mt-1 font-medium">
+                  {format(parseISO(startDate), 'MMMM d, yyyy')}
+                  {startDate !== endDate && ` - ${format(parseISO(endDate), 'MMMM d, yyyy')}`}
                 </p>
               </div>
-              <div className="flex items-center gap-6 text-sm">
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-900">{timelines.length}</p>
-                  <p className="text-gray-500">Days</p>
+              <div className="flex items-center gap-3">
+                {/* Days Stat Card */}
+                <div className="bg-slate-100 rounded-xl px-5 py-3 text-center min-w-[90px] border border-slate-200">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <Calendar className="w-4 h-4 text-slate-600" />
+                    <p className="text-2xl font-bold text-slate-800">{timelines.length}</p>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Days</p>
                 </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-900">{totalJobs}</p>
-                  <p className="text-gray-500">Jobs</p>
+                {/* Jobs Stat Card */}
+                <div className="bg-blue-50 rounded-xl px-5 py-3 text-center min-w-[90px] border border-blue-200">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <Briefcase className="w-4 h-4 text-blue-600" />
+                    <p className="text-2xl font-bold text-blue-700">{totalJobs}</p>
+                  </div>
+                  <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Jobs</p>
                 </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-900">
-                    {formatDuration(totalDriveMinutes)}
-                  </p>
-                  <p className="text-gray-500">Drive Time</p>
+                {/* Drive Time Stat Card */}
+                <div className="bg-emerald-50 rounded-xl px-5 py-3 text-center min-w-[90px] border border-emerald-200">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <MapPin className="w-4 h-4 text-emerald-600" />
+                    <p className="text-2xl font-bold text-emerald-700">
+                      {formatDuration(totalDriveMinutes)}
+                    </p>
+                  </div>
+                  <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Drive Time</p>
                 </div>
+                {/* Late First Jobs Stat Card */}
                 {lateFirstJobs > 0 && (
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-red-600">{lateFirstJobs}</p>
-                    <p className="text-gray-500">Late First Jobs</p>
+                  <div className="bg-red-50 rounded-xl px-5 py-3 text-center min-w-[90px] border-2 border-red-300">
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <AlertTriangle className="w-4 h-4 text-red-600" />
+                      <p className="text-2xl font-bold text-red-700">{lateFirstJobs}</p>
+                    </div>
+                    <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">Late</p>
                   </div>
                 )}
               </div>
@@ -738,90 +763,92 @@ export default function StopDetailsPage() {
 
           {/* Time Breakdown Cards */}
           <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
+            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-4">
               Time Breakdown by Location Type
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {categoryBreakdowns.map((breakdown) => (
                 <div key={breakdown.category}>
                   <button
                     onClick={() => toggleCategory(breakdown.category)}
-                    className={`w-full text-left rounded-lg border-2 p-4 transition-all ${
+                    className={`w-full text-left rounded-2xl border-2 p-5 transition-all duration-300 ${
                       breakdown.isWarning
-                        ? 'border-red-400 bg-red-50 ring-2 ring-red-200'
+                        ? 'border-red-400 bg-gradient-to-br from-red-50 to-red-100 ring-2 ring-red-200 shadow-md'
                         : `${breakdown.borderColor} ${breakdown.bgColor}`
                     } ${
                       expandedCategory === breakdown.category
-                        ? 'ring-2 ring-blue-400'
-                        : 'hover:shadow-md'
+                        ? 'ring-2 ring-blue-400 shadow-lg -translate-y-1'
+                        : 'hover:shadow-lg hover:-translate-y-1'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className={`${breakdown.isWarning ? 'text-red-600' : breakdown.textColor}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className={`p-2 rounded-xl ${breakdown.isWarning ? 'bg-red-200 text-red-700' : `bg-white/60 ${breakdown.textColor}`}`}>
                         {breakdown.icon}
                       </div>
-                      {breakdown.isWarning && (
-                        <AlertTriangle className="w-5 h-5 text-red-500 animate-pulse" />
-                      )}
-                      {expandedCategory === breakdown.category ? (
-                        <ChevronUp className="w-4 h-4 text-gray-400" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4 text-gray-400" />
-                      )}
+                      <div className="flex items-center gap-1">
+                        {breakdown.isWarning && (
+                          <AlertTriangle className="w-5 h-5 text-red-500 animate-pulse" />
+                        )}
+                        {expandedCategory === breakdown.category ? (
+                          <ChevronUp className="w-5 h-5 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-slate-400" />
+                        )}
+                      </div>
                     </div>
-                    <p className={`text-2xl font-bold ${breakdown.isWarning ? 'text-red-700' : breakdown.textColor}`}>
+                    <p className={`text-3xl font-bold ${breakdown.isWarning ? 'text-red-700' : breakdown.textColor}`}>
                       {formatDuration(breakdown.totalMinutes)}
                     </p>
-                    <p className={`text-sm font-medium ${breakdown.isWarning ? 'text-red-600' : breakdown.textColor}`}>
+                    <p className={`text-sm font-semibold mt-1 ${breakdown.isWarning ? 'text-red-600' : breakdown.textColor}`}>
                       {breakdown.label}
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs font-medium text-slate-500 mt-1">
                       {breakdown.stopCount} stop{breakdown.stopCount !== 1 ? 's' : ''}
                     </p>
                   </button>
 
                   {/* Expanded Details */}
                   {expandedCategory === breakdown.category && (
-                    <div className={`mt-2 rounded-lg border ${breakdown.borderColor} ${breakdown.bgColor} overflow-hidden`}>
-                      <div className="px-3 py-2 border-b border-gray-200 bg-white/50">
-                        <p className="text-sm font-medium text-gray-700">
+                    <div className={`mt-3 rounded-xl border-2 ${breakdown.borderColor} bg-white overflow-hidden shadow-md`}>
+                      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                        <p className="text-sm font-semibold text-slate-700">
                           {breakdown.label} - {formatDurationLong(breakdown.totalMinutes)} total
                         </p>
                       </div>
-                      <div className="max-h-64 overflow-y-auto">
+                      <div className="max-h-72 overflow-y-auto">
                         {breakdown.stops.map((stop, idx) => (
                           <div
                             key={stop.id}
-                            className={`px-3 py-2 flex items-start gap-3 ${
-                              idx !== breakdown.stops.length - 1 ? 'border-b border-gray-200/50' : ''
-                            } ${stop.durationMinutes >= 45 ? 'bg-red-100/50' : ''}`}
+                            className={`px-4 py-3 flex items-start gap-3 transition-colors hover:bg-slate-50 ${
+                              idx !== breakdown.stops.length - 1 ? 'border-b border-slate-100' : ''
+                            } ${stop.durationMinutes >= 45 ? 'bg-red-50/50' : ''}`}
                           >
                             {stop.logoUrl ? (
                               <img
                                 src={stop.logoUrl}
                                 alt=""
-                                className="w-8 h-8 object-contain flex-shrink-0 mt-0.5"
+                                className="w-10 h-10 object-contain flex-shrink-0 mt-0.5 rounded-lg"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).style.display = 'none';
                                 }}
                               />
                             ) : (
-                              <div className={`w-8 h-8 rounded-full ${breakdown.bgColor} flex items-center justify-center flex-shrink-0`}>
-                                <Clock className={`w-4 h-4 ${breakdown.textColor}`} />
+                              <div className={`w-10 h-10 rounded-xl ${breakdown.bgColor} flex items-center justify-center flex-shrink-0 border ${breakdown.borderColor}`}>
+                                <Clock className={`w-5 h-5 ${breakdown.textColor}`} />
                               </div>
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">
+                              <p className="text-sm font-semibold text-slate-800 truncate">
                                 {stop.name}
                               </p>
                               {stop.address && (
-                                <p className="text-xs text-gray-500 truncate">
+                                <p className="text-xs text-slate-500 truncate mt-0.5">
                                   {stop.address}
                                 </p>
                               )}
-                              <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                              <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-500 font-medium">
                                 <span>{stop.date}</span>
-                                <span>at</span>
+                                <span className="text-slate-300">|</span>
                                 <span>{stop.time}</span>
                               </div>
                             </div>
@@ -842,7 +869,7 @@ export default function StopDetailsPage() {
                                       address: stop.address,
                                     });
                                   }}
-                                  className="text-xs text-blue-600 hover:underline mt-1"
+                                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold mt-1 transition-colors"
                                 >
                                   View Map
                                 </button>
@@ -868,8 +895,8 @@ export default function StopDetailsPage() {
           )}
 
           {/* Timeline List */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+          <div className="space-y-6">
+            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">
               Day-by-Day Timeline
             </h3>
             {timelines.map((timeline) => (

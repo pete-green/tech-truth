@@ -211,41 +211,43 @@ function EstimateSummaryBadge({ event }: { event: TimelineEvent }) {
 // Transit Alert Panel - displayed on the left side of the timeline
 function TransitAlertPanel({ analysis, isRed }: { analysis: NonNullable<TimelineEvent['transitAnalysis']>; isRed: boolean }) {
   return (
-    <div className={`p-2 rounded-lg border text-xs ${
+    <div className={`p-3 rounded-xl border-2 text-sm shadow-md ${
       isRed
-        ? 'bg-red-50 border-red-300'
-        : 'bg-yellow-50 border-yellow-300'
+        ? 'bg-gradient-to-br from-red-50 to-rose-100 border-red-300'
+        : 'bg-gradient-to-br from-amber-50 to-yellow-100 border-amber-300'
     }`}>
-      <div className="flex items-center gap-1 mb-1">
-        <Timer className={`w-3 h-3 ${isRed ? 'text-red-500' : 'text-yellow-600'}`} />
-        <span className={`font-semibold ${isRed ? 'text-red-700' : 'text-yellow-700'}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`p-1.5 rounded-lg ${isRed ? 'bg-red-500' : 'bg-amber-500'}`}>
+          <Timer className="w-3.5 h-3.5 text-white" />
+        </div>
+        <span className={`font-bold text-sm ${isRed ? 'text-red-800' : 'text-amber-800'}`}>
           Transit Alert
         </span>
       </div>
-      <div className="space-y-0.5 text-gray-600">
-        <div className="flex justify-between">
-          <span>Expected:</span>
-          <span className="font-medium">{formatDuration(analysis.expectedDriveMinutes)}</span>
+      <div className="space-y-1.5 text-slate-700">
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-medium text-slate-500">Expected:</span>
+          <span className="font-bold text-sm">{formatDuration(analysis.expectedDriveMinutes)}</span>
         </div>
-        <div className="flex justify-between">
-          <span>Actual:</span>
-          <span className="font-medium">{formatDuration(analysis.onClockTransitMinutes)}</span>
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-medium text-slate-500">Actual:</span>
+          <span className="font-bold text-sm">{formatDuration(analysis.onClockTransitMinutes)}</span>
         </div>
         {analysis.mealBreakMinutes > 0 && (
-          <div className="flex justify-between text-gray-500 italic">
-            <span>Meal:</span>
-            <span>-{formatDuration(analysis.mealBreakMinutes)}</span>
+          <div className="flex justify-between items-center text-slate-500 italic">
+            <span className="text-xs">Meal break:</span>
+            <span className="text-xs">-{formatDuration(analysis.mealBreakMinutes)}</span>
           </div>
         )}
       </div>
-      <div className={`mt-1 pt-1 border-t flex justify-between font-semibold ${
-        isRed ? 'text-red-700 border-red-200' : 'text-yellow-700 border-yellow-200'
+      <div className={`mt-2 pt-2 border-t-2 flex justify-between items-center font-bold ${
+        isRed ? 'text-red-700 border-red-200' : 'text-amber-700 border-amber-200'
       }`}>
-        <span>Excess:</span>
-        <span>+{formatDuration(analysis.excessMinutes)}</span>
+        <span className="text-xs uppercase tracking-wide">Excess:</span>
+        <span className={`text-base ${isRed ? 'text-red-600' : 'text-amber-600'}`}>+{formatDuration(analysis.excessMinutes)}</span>
       </div>
-      <div className={`mt-1 text-[10px] ${isRed ? 'text-red-600' : 'text-yellow-600'}`}>
-        {analysis.distanceMiles} mi direct
+      <div className={`mt-1.5 text-xs font-medium ${isRed ? 'text-red-600' : 'text-amber-600'}`}>
+        {analysis.distanceMiles} mi direct route
       </div>
     </div>
   );
@@ -589,17 +591,17 @@ function TimelineEventCard({
       )}
 
       {/* Event card */}
-      <div className={`flex items-start gap-3 ${styles.bg} ${styles.border} border rounded-lg p-3`}>
+      <div className={`flex items-start gap-4 ${styles.bg} border-l-4 ${styles.border} rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow duration-200`}>
         {/* Icon */}
-        <div className={`${styles.iconBg} text-white p-1.5 rounded-full flex-shrink-0`}>
+        <div className={`${styles.iconBg} text-white p-2 rounded-xl flex-shrink-0 shadow-sm`}>
           <EventIcon type={event.type} isUnnecessary={event.isUnnecessary} />
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className={`font-medium ${styles.text}`}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`font-semibold ${styles.text}`}>
                 {getEventLabel(event)}
               </span>
 
@@ -615,21 +617,21 @@ function TimelineEventCard({
 
               {/* First job badge */}
               {event.isFirstJob && (
-                <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
+                <span className="text-xs font-semibold px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
                   First
                 </span>
               )}
 
               {/* Follow-up badge */}
               {event.isFollowUp && (
-                <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded italic">
+                <span className="text-xs font-medium px-2 py-0.5 bg-slate-200 text-slate-600 rounded-full italic">
                   Follow-up
                 </span>
               )}
 
               {/* Late badge */}
               {event.isLate && event.varianceMinutes !== undefined && (
-                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium">
+                <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-red-100 text-red-700 rounded-full">
                   <AlertTriangle className="w-3 h-3" />
                   +{event.varianceMinutes}m LATE
                 </span>
@@ -637,7 +639,7 @@ function TimelineEventCard({
 
               {/* Unnecessary visit badge */}
               {event.isUnnecessary && (
-                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded font-medium">
+                <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">
                   <AlertTriangle className="w-3 h-3" />
                   UNNECESSARY
                 </span>
@@ -645,7 +647,7 @@ function TimelineEventCard({
 
               {/* Violation badge for clock events */}
               {(event.type === 'clock_in' || event.type === 'clock_out') && event.isViolation && !event.isExcused && (
-                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium">
+                <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-red-100 text-red-700 rounded-full">
                   <AlertTriangle className="w-3 h-3" />
                   VIOLATION
                 </span>
@@ -653,7 +655,7 @@ function TimelineEventCard({
 
               {/* Excused badge for clock events */}
               {(event.type === 'clock_in' || event.type === 'clock_out') && event.isExcused && (
-                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium">
+                <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
                   <Check className="w-3 h-3" />
                   EXCUSED
                 </span>
@@ -661,7 +663,7 @@ function TimelineEventCard({
             </div>
 
             {/* Time */}
-            <span className="text-sm font-mono text-gray-600 flex-shrink-0">
+            <span className="text-sm font-mono font-semibold text-slate-600 flex-shrink-0 bg-slate-100 px-2 py-0.5 rounded-lg">
               {time}
             </span>
           </div>
@@ -796,7 +798,7 @@ function TimelineEventCard({
           )}
 
           {/* Action buttons */}
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
             {/* Map link for all arrival events */}
             {event.latitude && event.longitude && onShowMapLocation && (
               event.type === 'arrived_job' ||
@@ -820,9 +822,9 @@ function TimelineEventCard({
                     : 'Home',
                   address: event.address,
                 })}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-100 rounded-lg transition-all duration-200 border-2 border-blue-200 hover:border-blue-300"
               >
-                <MapPin className="w-3 h-3" />
+                <MapPin className="w-3.5 h-3.5" />
                 View on Map
               </button>
             )}
@@ -835,9 +837,9 @@ function TimelineEventCard({
                   longitude: event.longitude!,
                   address: event.address || 'Unknown Location',
                 })}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-teal-600 hover:bg-teal-50 rounded transition-colors border border-teal-200"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-600 hover:bg-teal-100 rounded-lg transition-all duration-200 border-2 border-teal-200 hover:border-teal-300"
               >
-                <Tag className="w-3 h-3" />
+                <Tag className="w-3.5 h-3.5" />
                 Label This Location
               </button>
             )}
@@ -853,9 +855,9 @@ function TimelineEventCard({
                   timestamp: event.timestamp,
                   address: event.address || 'Unknown Location',
                 })}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 rounded-lg transition-all duration-200 border-2 border-indigo-200 hover:border-indigo-300"
               >
-                <Briefcase className="w-3 h-3" />
+                <Briefcase className="w-3.5 h-3.5" />
                 Assign Job
               </button>
             )}
@@ -872,12 +874,12 @@ function TimelineEventCard({
                   isViolation: event.isViolation,
                   violationReason: event.violationReason,
                 })}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-yellow-700 hover:bg-yellow-50 rounded transition-colors border border-yellow-300"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 rounded-lg transition-all duration-200 border-2 border-amber-300 hover:border-amber-400"
               >
-                <MessageSquare className="w-3 h-3" />
+                <MessageSquare className="w-3.5 h-3.5" />
                 Annotate
                 {annotationCount && annotationCount > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 bg-yellow-200 text-yellow-800 rounded-full text-xs font-medium">
+                  <span className="ml-1 px-1.5 py-0.5 bg-amber-200 text-amber-800 rounded-full text-xs font-bold">
                     {annotationCount}
                   </span>
                 )}
@@ -1122,15 +1124,15 @@ export default function DayTimelineComponent({
 
   if (timeline.events.length === 0) {
     return (
-      <div className="border rounded-lg overflow-hidden bg-gray-50 mb-3">
-        <div className="px-4 py-2 bg-gray-100 border-b flex items-center justify-between">
-          <div>
-            <span className="font-medium text-gray-900">{formattedDate}</span>
-            <span className="text-gray-500 ml-2">({timeline.dayOfWeek})</span>
+      <div className="border-2 border-slate-200 rounded-2xl overflow-hidden bg-gradient-to-b from-slate-50 to-slate-100 mb-4 shadow-sm">
+        <div className="px-5 py-3 bg-gradient-to-r from-slate-100 to-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-bold text-slate-800">{formattedDate}</span>
+            <span className="text-sm font-medium text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">{timeline.dayOfWeek}</span>
           </div>
-          <span className="text-sm text-gray-500">{timeline.totalJobs} job{timeline.totalJobs !== 1 ? 's' : ''}</span>
+          <span className="text-sm font-medium text-slate-500">{timeline.totalJobs} job{timeline.totalJobs !== 1 ? 's' : ''}</span>
         </div>
-        <div className="p-4 text-gray-500 text-sm">
+        <div className="p-6 text-slate-500 text-sm text-center">
           No GPS data available for this day.
         </div>
       </div>
@@ -1138,27 +1140,34 @@ export default function DayTimelineComponent({
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden bg-white mb-3">
+    <div className="border-2 border-slate-200 rounded-2xl overflow-hidden bg-white mb-4 shadow-md hover:shadow-lg transition-shadow duration-300">
       {/* Header */}
-      <div className="px-4 py-3 bg-gray-100 border-b flex items-center justify-between">
-        <div>
-          <span className="font-medium text-gray-900">{formattedDate}</span>
-          <span className="text-gray-500 ml-2">({timeline.dayOfWeek})</span>
+      <div className="px-5 py-4 bg-gradient-to-r from-slate-100 to-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-lg font-bold text-slate-800">{formattedDate}</span>
+          <span className="text-sm font-semibold text-slate-500 bg-slate-200 px-2.5 py-0.5 rounded-full">{timeline.dayOfWeek}</span>
         </div>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-gray-500">
+        <div className="flex items-center gap-3">
+          {/* Job count badge */}
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
+            <Briefcase className="w-3.5 h-3.5" />
             {timeline.totalJobs} job{timeline.totalJobs !== 1 ? 's' : ''}
           </span>
+          {/* Office visits badge */}
           {timeline.totalOfficeVisits > 0 && (
-            <span className="text-purple-600">
-              {timeline.totalOfficeVisits} office visit{timeline.totalOfficeVisits !== 1 ? 's' : ''}
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold">
+              <Building className="w-3.5 h-3.5" />
+              {timeline.totalOfficeVisits} office
             </span>
           )}
+          {/* Drive time badge */}
           {timeline.totalDriveMinutes > 0 && (
-            <span className="text-gray-500">
-              {formatDuration(timeline.totalDriveMinutes)} driving
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-200 text-slate-700 rounded-full text-sm font-semibold">
+              <Car className="w-3.5 h-3.5" />
+              {formatDuration(timeline.totalDriveMinutes)}
             </span>
           )}
+          {/* Add Missing Punch button */}
           {onAddMissingPunch && (
             <button
               onClick={() => onAddMissingPunch({
@@ -1166,9 +1175,9 @@ export default function DayTimelineComponent({
                 technicianName: timeline.technicianName,
                 date: timeline.date,
               })}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-orange-700 hover:bg-orange-50 rounded transition-colors border border-orange-300"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-orange-700 hover:bg-orange-100 rounded-lg transition-all duration-200 border-2 border-orange-300 hover:border-orange-400"
             >
-              <Plus className="w-3 h-3" />
+              <Plus className="w-3.5 h-3.5" />
               Add Missing Punch
             </button>
           )}
@@ -1177,26 +1186,30 @@ export default function DayTimelineComponent({
 
       {/* First job status banner */}
       {timeline.firstJobOnTime !== null && (
-        <div className={`px-4 py-2 border-b ${
+        <div className={`px-5 py-3 border-b-2 ${
           timeline.firstJobOnTime
-            ? 'bg-green-50 text-green-700'
-            : 'bg-red-50 text-red-700'
+            ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 text-green-800'
+            : 'bg-gradient-to-r from-red-50 to-rose-50 border-red-200 text-red-800'
         }`}>
-          <div className="flex items-center gap-2 text-sm font-medium">
+          <div className="flex items-center gap-2 text-sm font-semibold">
             {timeline.firstJobOnTime ? (
               <>
-                <span className="text-green-500">&#10003;</span>
+                <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                  <Check className="w-3 h-3 text-white" />
+                </div>
                 First job on time
                 {timeline.firstJobVariance !== null && timeline.firstJobVariance < 0 && (
-                  <span className="text-green-600">({Math.abs(timeline.firstJobVariance)}m early)</span>
+                  <span className="text-green-600 font-bold">({Math.abs(timeline.firstJobVariance)}m early)</span>
                 )}
               </>
             ) : (
               <>
-                <AlertTriangle className="w-4 h-4" />
+                <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="w-3 h-3 text-white" />
+                </div>
                 First job late
                 {timeline.firstJobVariance !== null && (
-                  <span className="text-red-600">(+{timeline.firstJobVariance}m)</span>
+                  <span className="text-red-600 font-bold">(+{timeline.firstJobVariance}m)</span>
                 )}
               </>
             )}
@@ -1206,12 +1219,14 @@ export default function DayTimelineComponent({
 
       {/* Overnight at office warning banner */}
       {timeline.overnightAtOffice && (
-        <div className="px-4 py-3 border-b bg-amber-50 text-amber-800">
+        <div className="px-5 py-4 border-b-2 border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 text-amber-900">
           <div className="flex items-start gap-3">
-            <Building className="w-5 h-5 mt-0.5 flex-shrink-0" />
+            <div className="w-8 h-8 bg-amber-500 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Building className="w-4 h-4 text-white" />
+            </div>
             <div>
-              <p className="font-medium">Vehicle parked at office overnight</p>
-              <p className="text-sm text-amber-700">
+              <p className="font-bold text-amber-900">Vehicle parked at office overnight</p>
+              <p className="text-sm text-amber-700 mt-0.5">
                 This technician normally takes the truck home, but left it at the office. No morning departure from home.
               </p>
             </div>
@@ -1234,10 +1249,12 @@ export default function DayTimelineComponent({
 
       {/* Summary footer */}
       {timeline.totalDriveMinutes > 0 && (
-        <div className="px-4 py-2 bg-gray-50 border-t text-sm text-gray-600">
-          <div className="flex items-center gap-1">
-            <Car className="w-4 h-4" />
-            Total drive time: {formatDuration(timeline.totalDriveMinutes)}
+        <div className="px-5 py-3 bg-gradient-to-r from-slate-50 to-slate-100 border-t-2 border-slate-200">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+            <div className="p-1.5 bg-slate-200 rounded-lg">
+              <Car className="w-4 h-4 text-slate-600" />
+            </div>
+            Total drive time: <span className="text-slate-800">{formatDuration(timeline.totalDriveMinutes)}</span>
           </div>
         </div>
       )}
