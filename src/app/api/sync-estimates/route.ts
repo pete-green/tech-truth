@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { getEstimates, getEstimateItems, ServiceTitanEstimate, ServiceTitanEstimateItem } from '@/lib/service-titan';
-import { format, parseISO, differenceInMinutes, startOfDay, endOfDay } from 'date-fns';
+import { getEstimates, ServiceTitanEstimate } from '@/lib/service-titan';
+import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { fromZonedTime } from 'date-fns-tz';
+
+// Items are embedded in estimate response, not fetched separately
+interface EmbeddedEstimateItem {
+  id: number;
+  qty: number;
+  sku?: {
+    id: number;
+    name: string;
+    type: string;
+  };
+  total: number;
+  unitRate: number;
+  description: string;
+}
 
 export const maxDuration = 120; // 2 minutes for larger syncs
 
@@ -218,11 +232,11 @@ export async function POST(req: NextRequest) {
 
         estimatesStored++;
 
-        // Fetch and store estimate items
+        // Extract and store estimate items from the embedded items array
         if (syncItems && upsertedEstimate) {
           try {
-            const itemsResponse = await getEstimateItems(estimate.id);
-            const items: ServiceTitanEstimateItem[] = itemsResponse.data || [];
+            // Items are embedded in the estimate response, not a separate API call
+            const items: EmbeddedEstimateItem[] = (estimate as any).items || [];
 
             if (items.length > 0) {
               // Delete existing items for this estimate (full refresh)
@@ -234,14 +248,14 @@ export async function POST(req: NextRequest) {
               const itemRows: EstimateItemRow[] = items.map(item => ({
                 estimate_id: upsertedEstimate.id,
                 st_item_id: item.id,
-                sku_id: item.skuId || null,
-                sku_name: item.skuName || null,
+                sku_id: item.sku?.id || null,
+                sku_name: item.sku?.name || null,
                 description: item.description || null,
-                quantity: item.quantity || 1,
-                unit_price: item.unitPrice || null,
+                quantity: item.qty || 1,
+                unit_price: item.unitRate || null,
                 total_price: item.total || null,
-                item_type: item.type || null,
-                is_sold: item.isSold || false,
+                item_type: item.sku?.type || null,
+                is_sold: estimate.soldOn !== null, // Item is sold if estimate is sold
                 raw_data: item,
               }));
 
@@ -256,7 +270,7 @@ export async function POST(req: NextRequest) {
               }
             }
           } catch (itemsErr: any) {
-            errors.push({ estimateId: estimate.id, error: `Items fetch: ${itemsErr.message}` });
+            errors.push({ estimateId: estimate.id, error: `Items: ${itemsErr.message}` });
           }
         }
       } catch (estError: any) {
