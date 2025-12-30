@@ -1,6 +1,9 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
+
+const EST_TIMEZONE = 'America/New_York';
 import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2, MessageSquare, Plus, DollarSign, ChevronDown, ChevronUp, Package, Timer, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
@@ -174,7 +177,7 @@ function EstimateSummaryBadge({ event }: { event: TimelineEvent }) {
               {est.minutesFromArrival !== null && (
                 <div className="text-xs text-gray-500 mt-1">
                   Created {est.minutesFromArrival}m after arrival
-                  {est.isSold && est.soldAt && ` • Sold at ${format(parseISO(est.soldAt), 'h:mm a')}`}
+                  {est.isSold && est.soldAt && ` • Sold at ${format(toZonedTime(parseISO(est.soldAt), EST_TIMEZONE), 'h:mm a')}`}
                 </div>
               )}
 
@@ -593,7 +596,7 @@ function TimelineEventCard({
   annotationCount?: number;
 }) {
   const styles = getEventStyles(event);
-  const time = format(parseISO(event.timestamp), 'h:mm a');
+  const time = format(toZonedTime(parseISO(event.timestamp), EST_TIMEZONE), 'h:mm a');
 
   return (
     <div className="relative">
@@ -721,7 +724,7 @@ function TimelineEventCard({
           {/* Scheduled time for jobs */}
           {event.scheduledTime && (
             <div className="text-xs text-gray-500 mt-1">
-              Scheduled: {format(parseISO(event.scheduledTime), 'h:mm a')}
+              Scheduled: {format(toZonedTime(parseISO(event.scheduledTime), EST_TIMEZONE), 'h:mm a')}
             </div>
           )}
 

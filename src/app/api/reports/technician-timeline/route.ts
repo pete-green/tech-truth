@@ -131,58 +131,68 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // First try to get GPS segments from stored database (synced data)
-    // Fall back to live Verizon API if no stored data
+    // Get GPS segments - for current day always use live API for fresh data
+    // For past dates, use stored data for performance
     const targetDate = parseISO(date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isToday = targetDate >= today;
+
     let segments: Awaited<ReturnType<typeof getVehicleSegments>>['Segments'] = [];
     let usedStoredData = false;
 
-    // Try to get stored segments first
-    const { data: storedSegments, error: storedError } = await supabase
-      .from('gps_segments')
-      .select('*')
-      .eq('technician_id', technicianId)
-      .eq('segment_date', date)
-      .order('start_time', { ascending: true });
+    // For current day, skip stored data - always fetch fresh from live API
+    // This ensures we get the latest GPS data including recent departures
+    if (!isToday) {
+      // Try to get stored segments for past dates
+      const { data: storedSegments, error: storedError } = await supabase
+        .from('gps_segments')
+        .select('*')
+        .eq('technician_id', technicianId)
+        .eq('segment_date', date)
+        .order('start_time', { ascending: true });
 
-    if (!storedError && storedSegments && storedSegments.length > 0) {
-      // Convert stored segments back to Verizon API format for timeline builder
-      segments = storedSegments.map(seg => ({
-        StartDateUtc: seg.start_time?.replace('Z', '').replace('.000', '') || '',
-        EndDateUtc: seg.end_time?.replace('Z', '').replace('.000', '') || null,
-        IsComplete: seg.is_complete || false,
-        StartLocation: {
-          Latitude: seg.start_latitude,
-          Longitude: seg.start_longitude,
-          AddressLine1: seg.start_address?.split(',')[0] || '',
-          AddressLine2: '',
-          Locality: seg.start_address?.split(',')[1]?.trim() || '',
-          AdministrativeArea: seg.start_address?.split(',')[2]?.trim() || '',
-          PostalCode: seg.start_address?.split(',')[3]?.trim() || '',
-          Country: 'USA',
-        },
-        StartLocationIsPrivate: false,
-        EndLocation: seg.end_latitude && seg.end_longitude ? {
-          Latitude: seg.end_latitude,
-          Longitude: seg.end_longitude,
-          AddressLine1: seg.end_address?.split(',')[0] || '',
-          AddressLine2: '',
-          Locality: seg.end_address?.split(',')[1]?.trim() || '',
-          AdministrativeArea: seg.end_address?.split(',')[2]?.trim() || '',
-          PostalCode: seg.end_address?.split(',')[3]?.trim() || '',
-          Country: 'USA',
-        } : null,
-        EndLocationIsPrivate: false,
-        DistanceTraveled: seg.distance_miles || 0,
-        DistanceKilometers: (seg.distance_miles || 0) * 1.60934,
-        MaxSpeed: seg.max_speed || 0,
-        IdleTime: seg.idle_minutes ? seg.idle_minutes * 60 : 0,
-      }));
-      usedStoredData = true;
-      console.log(`[Timeline] Using ${segments.length} stored segments for ${technician.name} on ${date}`);
+      if (!storedError && storedSegments && storedSegments.length > 0) {
+        // Convert stored segments back to Verizon API format for timeline builder
+        segments = storedSegments.map(seg => ({
+          StartDateUtc: seg.start_time?.replace('Z', '').replace('.000', '') || '',
+          EndDateUtc: seg.end_time?.replace('Z', '').replace('.000', '') || null,
+          IsComplete: seg.is_complete || false,
+          StartLocation: {
+            Latitude: seg.start_latitude,
+            Longitude: seg.start_longitude,
+            AddressLine1: seg.start_address?.split(',')[0] || '',
+            AddressLine2: '',
+            Locality: seg.start_address?.split(',')[1]?.trim() || '',
+            AdministrativeArea: seg.start_address?.split(',')[2]?.trim() || '',
+            PostalCode: seg.start_address?.split(',')[3]?.trim() || '',
+            Country: 'USA',
+          },
+          StartLocationIsPrivate: false,
+          EndLocation: seg.end_latitude && seg.end_longitude ? {
+            Latitude: seg.end_latitude,
+            Longitude: seg.end_longitude,
+            AddressLine1: seg.end_address?.split(',')[0] || '',
+            AddressLine2: '',
+            Locality: seg.end_address?.split(',')[1]?.trim() || '',
+            AdministrativeArea: seg.end_address?.split(',')[2]?.trim() || '',
+            PostalCode: seg.end_address?.split(',')[3]?.trim() || '',
+            Country: 'USA',
+          } : null,
+          EndLocationIsPrivate: false,
+          DistanceTraveled: seg.distance_miles || 0,
+          DistanceKilometers: (seg.distance_miles || 0) * 1.60934,
+          MaxSpeed: seg.max_speed || 0,
+          IdleTime: seg.idle_minutes ? seg.idle_minutes * 60 : 0,
+        }));
+        usedStoredData = true;
+        console.log(`[Timeline] Using ${segments.length} stored segments for ${technician.name} on ${date}`);
+      }
+    } else {
+      console.log(`[Timeline] Current day detected - will fetch fresh data from Verizon API for ${technician.name}`);
     }
 
-    // Fall back to live API if no stored data
+    // For current day, or if no stored data for past dates, fetch from live API
     if (segments.length === 0) {
       console.log(`[Timeline] No stored segments, fetching from Verizon API for ${technician.name} on ${date}`);
 
