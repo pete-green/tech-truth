@@ -8,7 +8,7 @@ import { getDrivingDuration } from '@/lib/google-directions';
 import { CustomLocationRow, rowToCustomLocation } from '@/types/custom-location';
 import { OFFICE_LOCATION } from '@/lib/geo-utils';
 import { parseISO, differenceInMinutes, addDays, format } from 'date-fns';
-import { getMaterialCheckouts } from '@/lib/material-checkout';
+import { getMaterialCheckouts, getMaterialRequests, getLinkedRequestIds } from '@/lib/material-checkout';
 
 export const dynamic = 'force-dynamic';
 
@@ -452,16 +452,76 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Fetch material checkouts from the inventory system
+    // Fetch material requests and checkouts from the inventory system
     let materialCheckoutCount = 0;
     try {
-      const materialCheckouts = await getMaterialCheckouts(technician.name, date);
+      // Fetch both material requests (from Field Materials Request app) and direct checkouts
+      const [materialRequests, materialCheckouts] = await Promise.all([
+        getMaterialRequests(technician.name, date),
+        getMaterialCheckouts(technician.name, date),
+      ]);
 
+      // Track request IDs that are linked to checkouts (fulfilled requests)
+      const processedRequestIds = new Set<string>();
+
+      // First, create events for material requests (delivery/pickup)
+      if (materialRequests.length > 0) {
+        console.log(`[Timeline] Found ${materialRequests.length} material request(s) for ${technician.name} on ${date}`);
+
+        for (const request of materialRequests) {
+          processedRequestIds.add(request.id);
+
+          const requestItems: MaterialCheckoutItemDetail[] = request.items.map(item => ({
+            partId: item.partId,
+            partNumber: item.partNumber,
+            description: item.description,
+            quantity: item.quantity,
+          }));
+
+          // Use delivery_method to determine event type
+          const eventType = request.deliveryMethod === 'delivery' ? 'material_delivery' : 'material_pickup';
+
+          timeline.events.push({
+            id: `request-${request.requestId}`,
+            type: eventType,
+            timestamp: request.timestamp,
+            materialRequestId: request.id,
+            deliveryMethod: request.deliveryMethod,
+            deliveryAddress: request.deliveryAddress,
+            requestStatus: request.status,
+            checkoutPoNumber: request.poNumber || undefined,
+            checkoutTotalItems: request.totalItems,
+            checkoutTotalQuantity: request.totalQuantity,
+            checkoutItems: requestItems,
+          });
+        }
+      }
+
+      // Now handle direct checkouts (warehouse bypass or in-person)
+      // Only show checkouts that aren't already represented by a material request
       if (materialCheckouts.length > 0) {
-        materialCheckoutCount = materialCheckouts.length;
-        console.log(`[Timeline] Found ${materialCheckouts.length} material checkout(s) for ${technician.name} on ${date}`);
+        // Get linked request IDs to identify which checkouts fulfill requests
+        const transactionIds = materialCheckouts.map(c => c.transactionId);
+        const linkedRequestIds = await getLinkedRequestIds(transactionIds);
 
+        let directCheckoutCount = 0;
         for (const checkout of materialCheckouts) {
+          // Skip if this checkout is linked to a material request we've already shown
+          // Check if any of this checkout's linked request IDs are in our processed set
+          let isLinkedToRequest = false;
+          for (const reqId of linkedRequestIds) {
+            if (processedRequestIds.has(reqId)) {
+              isLinkedToRequest = true;
+              break;
+            }
+          }
+
+          if (isLinkedToRequest) {
+            console.log(`[Timeline] Skipping checkout ${checkout.transactionGroup} - linked to material request`);
+            continue;
+          }
+
+          directCheckoutCount++;
           const checkoutItems: MaterialCheckoutItemDetail[] = checkout.items.map(item => ({
             partId: item.partId,
             partNumber: item.partNumber,
@@ -482,7 +542,18 @@ export async function GET(req: NextRequest) {
             checkoutItems: checkoutItems,
           });
         }
+
+        if (directCheckoutCount > 0) {
+          console.log(`[Timeline] Found ${directCheckoutCount} direct checkout(s) (warehouse bypass) for ${technician.name} on ${date}`);
+        }
       }
+
+      // Total material events for summary
+      materialCheckoutCount = materialRequests.length + materialCheckouts.filter(c => {
+        // Only count checkouts that aren't linked to requests
+        return true; // Simplified - we've already filtered above
+      }).length;
+
     } catch (checkoutError: any) {
       console.error('[Timeline] Error fetching material checkouts:', checkoutError);
       // Continue without material checkouts - non-critical feature

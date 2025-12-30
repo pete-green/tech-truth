@@ -18,7 +18,9 @@ export type TimelineEventType =
   | 'missing_clock_out' // Warning when tech clocked in but never clocked out
   | 'overnight_at_office' // Info: vehicle was parked at office overnight (take-home truck tech)
   | 'proposed_punch' // Pending proposed punch awaiting approval
-  | 'material_checkout'; // Material/parts checked out from shop inventory
+  | 'material_checkout' // Direct checkout - warehouse bypass or in-person at shop
+  | 'material_delivery' // Delivery request - tech stayed on job (GOOD practice)
+  | 'material_pickup'; // Pickup request - tech submitted request but had to drive to shop
 
 export interface TimelineEvent {
   id: string;
@@ -89,6 +91,12 @@ export interface TimelineEvent {
   checkoutTotalItems?: number;
   checkoutTotalQuantity?: number;
   checkoutItems?: MaterialCheckoutItemDetail[];
+
+  // Material request info (for material_delivery/material_pickup events)
+  materialRequestId?: string;
+  deliveryMethod?: 'delivery' | 'pickup';
+  deliveryAddress?: string;
+  requestStatus?: string;
 }
 
 // Summary of estimates for a job (shown on job card)

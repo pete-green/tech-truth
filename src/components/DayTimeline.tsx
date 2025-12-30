@@ -1,7 +1,7 @@
 'use client';
 
 import { format, parseISO } from 'date-fns';
-import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2, MessageSquare, Plus, DollarSign, ChevronDown, ChevronUp, Package, Timer } from 'lucide-react';
+import { Home, Building, MapPin, Car, AlertTriangle, Clock, Navigation, HelpCircle, Tag, Coffee, Check, Briefcase, Link2, MessageSquare, Plus, DollarSign, ChevronDown, ChevronUp, Package, Timer, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { DayTimeline, TimelineEvent } from '@/types/timeline';
 import { getCategoryIcon, getCategoryColors } from '@/lib/location-logos';
@@ -318,6 +318,10 @@ function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEven
       return <Plus className="w-4 h-4" />;
     case 'material_checkout':
       return <Package className="w-4 h-4" />;
+    case 'material_delivery':
+      return <Truck className="w-4 h-4" />;
+    case 'material_pickup':
+      return <MapPin className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
@@ -368,7 +372,14 @@ function getEventLabel(event: TimelineEvent): string {
                           event.proposedPunchStatus === 'rejected' ? 'Rejected' : '';
       return `Proposed ${punchTypeLabel} (${statusLabel})`;
     case 'material_checkout':
-      return `Material Checkout (${event.checkoutTotalItems || 0} items)`;
+      const checkoutItemCount = event.checkoutItems?.length || event.checkoutTotalItems || 0;
+      return `Direct Checkout (${checkoutItemCount} items)`;
+    case 'material_delivery':
+      const deliveryItemCount = event.checkoutItems?.length || event.checkoutTotalItems || 0;
+      return `Delivery Request (${deliveryItemCount} items)`;
+    case 'material_pickup':
+      const pickupItemCount = event.checkoutItems?.length || event.checkoutTotalItems || 0;
+      return `Pickup Request (${pickupItemCount} items)`;
     default:
       return 'Unknown Event';
   }
@@ -525,11 +536,28 @@ function getEventStyles(event: TimelineEvent): {
         };
       }
     case 'material_checkout':
+      // Direct checkout (warehouse bypass) - amber/warning
       return {
-        bg: 'bg-indigo-50',
-        border: 'border-indigo-200',
-        iconBg: 'bg-indigo-500',
-        text: 'text-indigo-900',
+        bg: 'bg-amber-50',
+        border: 'border-amber-300',
+        iconBg: 'bg-amber-500',
+        text: 'text-amber-900',
+      };
+    case 'material_delivery':
+      // Delivery request - green (good practice)
+      return {
+        bg: 'bg-green-50',
+        border: 'border-green-300',
+        iconBg: 'bg-green-500',
+        text: 'text-green-900',
+      };
+    case 'material_pickup':
+      // Pickup request - blue (used app but had to drive)
+      return {
+        bg: 'bg-blue-50',
+        border: 'border-blue-300',
+        iconBg: 'bg-blue-500',
+        text: 'text-blue-900',
       };
     default:
       return {
@@ -741,9 +769,44 @@ function TimelineEventCard({
             </div>
           )}
 
-          {/* Material checkout details */}
-          {event.type === 'material_checkout' && (
+          {/* Material checkout/delivery/pickup details */}
+          {(event.type === 'material_checkout' || event.type === 'material_delivery' || event.type === 'material_pickup') && (
             <div className="mt-2">
+              {/* Badge and delivery address */}
+              <div className="flex items-center gap-2 mb-2">
+                {event.type === 'material_delivery' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                    <Check className="w-3 h-3" />
+                    DELIVERY
+                  </span>
+                )}
+                {event.type === 'material_pickup' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+                    <MapPin className="w-3 h-3" />
+                    PICKUP
+                  </span>
+                )}
+                {event.type === 'material_checkout' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">
+                    <AlertTriangle className="w-3 h-3" />
+                    BYPASS
+                  </span>
+                )}
+                {event.requestStatus && (
+                  <span className="text-xs text-gray-500 capitalize">
+                    {event.requestStatus}
+                  </span>
+                )}
+              </div>
+
+              {/* Delivery address (for delivery requests) */}
+              {event.type === 'material_delivery' && event.deliveryAddress && (
+                <div className="text-xs text-gray-600 mb-2 flex items-start gap-1">
+                  <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                  <span>Delivered to: {event.deliveryAddress}</span>
+                </div>
+              )}
+
               {/* Truck and PO info */}
               <div className="flex items-center gap-3 text-xs text-gray-500">
                 {event.checkoutTruckNumber && (
@@ -760,7 +823,11 @@ function TimelineEventCard({
                 <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
                   {event.checkoutItems.map((item, idx) => (
                     <div key={idx} className="flex items-start gap-2 text-xs bg-white/50 rounded px-2 py-1">
-                      <span className="font-mono text-indigo-600 flex-shrink-0">
+                      <span className={`font-mono flex-shrink-0 ${
+                        event.type === 'material_delivery' ? 'text-green-600' :
+                        event.type === 'material_pickup' ? 'text-blue-600' :
+                        'text-amber-600'
+                      }`}>
                         {item.quantity}x
                       </span>
                       <div className="min-w-0">
