@@ -208,58 +208,79 @@ function EstimateSummaryBadge({ event }: { event: TimelineEvent }) {
   );
 }
 
-// Transit Alert Badge for job-to-job travel time analysis
-function TransitAlertBadge({ event }: { event: TimelineEvent }) {
-  const analysis = event.transitAnalysis;
-
-  if (!analysis || !analysis.isSuspicious) return null;
-
-  // Determine severity color based on excess minutes
-  // Yellow: 15-30 minutes excess
-  // Red: > 30 minutes excess
-  const isRed = analysis.excessMinutes >= 30;
-
+// Transit Alert Panel - displayed on the left side of the timeline
+function TransitAlertPanel({ analysis, isRed }: { analysis: NonNullable<TimelineEvent['transitAnalysis']>; isRed: boolean }) {
   return (
-    <div className={`mt-3 p-3 rounded-lg border ${
+    <div className={`p-2 rounded-lg border text-xs ${
       isRed
         ? 'bg-red-50 border-red-300'
         : 'bg-yellow-50 border-yellow-300'
     }`}>
-      <div className="flex items-start gap-2">
-        <Timer className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isRed ? 'text-red-500' : 'text-yellow-600'}`} />
-        <div className="flex-1">
-          <div className={`font-medium text-sm ${isRed ? 'text-red-700' : 'text-yellow-700'}`}>
-            Transit Time Alert
-          </div>
-          <div className="mt-1 text-xs space-y-1">
-            <div className="flex items-center justify-between text-gray-600">
-              <span>Expected drive time:</span>
-              <span className="font-medium">{formatDuration(analysis.expectedDriveMinutes)}</span>
-            </div>
-            <div className="flex items-center justify-between text-gray-600">
-              <span>Actual transit (on-clock):</span>
-              <span className="font-medium">{formatDuration(analysis.onClockTransitMinutes)}</span>
-            </div>
-            {analysis.mealBreakMinutes > 0 && (
-              <div className="flex items-center justify-between text-gray-500 italic">
-                <span>Meal break (excluded):</span>
-                <span>{formatDuration(analysis.mealBreakMinutes)}</span>
-              </div>
-            )}
-            <div className={`flex items-center justify-between font-medium pt-1 border-t ${
-              isRed ? 'text-red-700 border-red-200' : 'text-yellow-700 border-yellow-200'
-            }`}>
-              <span>Excess time:</span>
-              <span>+{formatDuration(analysis.excessMinutes)}</span>
-            </div>
-          </div>
-          <div className={`mt-2 text-xs ${isRed ? 'text-red-600' : 'text-yellow-600'}`}>
-            From Job #{analysis.fromJobNumber} ({analysis.distanceMiles} mi direct)
-          </div>
+      <div className="flex items-center gap-1 mb-1">
+        <Timer className={`w-3 h-3 ${isRed ? 'text-red-500' : 'text-yellow-600'}`} />
+        <span className={`font-semibold ${isRed ? 'text-red-700' : 'text-yellow-700'}`}>
+          Transit Alert
+        </span>
+      </div>
+      <div className="space-y-0.5 text-gray-600">
+        <div className="flex justify-between">
+          <span>Expected:</span>
+          <span className="font-medium">{formatDuration(analysis.expectedDriveMinutes)}</span>
         </div>
+        <div className="flex justify-between">
+          <span>Actual:</span>
+          <span className="font-medium">{formatDuration(analysis.onClockTransitMinutes)}</span>
+        </div>
+        {analysis.mealBreakMinutes > 0 && (
+          <div className="flex justify-between text-gray-500 italic">
+            <span>Meal:</span>
+            <span>-{formatDuration(analysis.mealBreakMinutes)}</span>
+          </div>
+        )}
+      </div>
+      <div className={`mt-1 pt-1 border-t flex justify-between font-semibold ${
+        isRed ? 'text-red-700 border-red-200' : 'text-yellow-700 border-yellow-200'
+      }`}>
+        <span>Excess:</span>
+        <span>+{formatDuration(analysis.excessMinutes)}</span>
+      </div>
+      <div className={`mt-1 text-[10px] ${isRed ? 'text-red-600' : 'text-yellow-600'}`}>
+        {analysis.distanceMiles} mi direct
       </div>
     </div>
   );
+}
+
+// Identify transit alert spans in the events list
+interface TransitAlertSpan {
+  fromIndex: number;      // Index of left_job event
+  toIndex: number;        // Index of arrived_job event
+  analysis: NonNullable<TimelineEvent['transitAnalysis']>;
+  isRed: boolean;
+}
+
+function findTransitAlertSpans(events: TimelineEvent[]): TransitAlertSpan[] {
+  const spans: TransitAlertSpan[] = [];
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    if (event.type === 'arrived_job' && event.transitAnalysis?.isSuspicious) {
+      // Find the corresponding left_job event
+      for (let j = i - 1; j >= 0; j--) {
+        if (events[j].type === 'left_job' && events[j].jobNumber === event.transitAnalysis.fromJobNumber) {
+          spans.push({
+            fromIndex: j,
+            toIndex: i,
+            analysis: event.transitAnalysis,
+            isRed: event.transitAnalysis.excessMinutes >= 30,
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  return spans;
 }
 
 function EventIcon({ type, isUnnecessary, customCategory }: { type: TimelineEvent['type']; isUnnecessary?: boolean; customCategory?: string }) {
@@ -668,11 +689,6 @@ function TimelineEventCard({
             <EstimateSummaryBadge event={event} />
           )}
 
-          {/* Transit Time Alert for suspicious job-to-job travel */}
-          {event.type === 'arrived_job' && event.transitAnalysis?.isSuspicious && (
-            <TransitAlertBadge event={event} />
-          )}
-
           {/* Violation reason for clock events */}
           {(event.type === 'clock_in' || event.type === 'clock_out') && event.isViolation && event.violationReason && !event.isExcused && (
             <div className="text-xs text-red-600 mt-1">
@@ -828,6 +844,135 @@ function TimelineEventCard({
   );
 }
 
+// Component that renders events with left-side transit alerts
+function TimelineEventsWithAlerts({
+  events,
+  technicianId,
+  date,
+  onShowGpsLocation,
+  onShowMapLocation,
+  onLabelLocation,
+  onAssignJob,
+  onAnnotatePunch,
+  annotationCounts,
+}: {
+  events: TimelineEvent[];
+  technicianId: string;
+  date: string;
+  onShowGpsLocation?: (jobId: string, jobNumber: string) => void;
+  onShowMapLocation?: (location: MapLocation) => void;
+  onLabelLocation?: (location: LabelLocationData) => void;
+  onAssignJob?: (data: AssignJobData) => void;
+  onAnnotatePunch?: (data: AnnotatePunchData) => void;
+  annotationCounts?: Record<string, number>;
+}) {
+  const alertSpans = findTransitAlertSpans(events);
+
+  // Check if an event index is within any alert span
+  const getAlertForIndex = (index: number): TransitAlertSpan | null => {
+    for (const span of alertSpans) {
+      if (index >= span.fromIndex && index <= span.toIndex) {
+        return span;
+      }
+    }
+    return null;
+  };
+
+  // Check if this is the start of an alert span
+  const isAlertStart = (index: number): TransitAlertSpan | null => {
+    return alertSpans.find(span => span.fromIndex === index) || null;
+  };
+
+  // Check if this is the end of an alert span
+  const isAlertEnd = (index: number): boolean => {
+    return alertSpans.some(span => span.toIndex === index);
+  };
+
+  // Check if this index is in the middle of an alert span
+  const isInAlertMiddle = (index: number): TransitAlertSpan | null => {
+    for (const span of alertSpans) {
+      if (index > span.fromIndex && index < span.toIndex) {
+        return span;
+      }
+    }
+    return null;
+  };
+
+  return (
+    <div className="p-4">
+      {events.map((event, index) => {
+        const alertStart = isAlertStart(index);
+        const alertMiddle = isInAlertMiddle(index);
+        const alertEnd = isAlertEnd(index);
+        const activeAlert = alertStart || alertMiddle;
+
+        return (
+          <div key={event.id} className="flex">
+            {/* Left side - Transit alert area */}
+            <div className="w-40 flex-shrink-0 relative mr-3">
+              {/* Alert panel at the start of a span */}
+              {alertStart && (
+                <div className="absolute top-0 left-0 right-2 z-10">
+                  <TransitAlertPanel analysis={alertStart.analysis} isRed={alertStart.isRed} />
+                </div>
+              )}
+
+              {/* Connecting line during alert span */}
+              {(alertStart || alertMiddle) && (
+                <div className={`absolute top-0 bottom-0 right-0 w-0.5 ${
+                  (alertStart || alertMiddle)?.isRed ? 'bg-red-400' : 'bg-yellow-400'
+                }`} />
+              )}
+
+              {/* Top arrow at start */}
+              {alertStart && (
+                <div className={`absolute top-4 right-0 w-3 h-0.5 ${
+                  alertStart.isRed ? 'bg-red-400' : 'bg-yellow-400'
+                }`}>
+                  <div className={`absolute right-0 top-1/2 -translate-y-1/2 w-0 h-0
+                    border-t-4 border-t-transparent
+                    border-b-4 border-b-transparent
+                    ${alertStart.isRed ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-yellow-400'}`}
+                  />
+                </div>
+              )}
+
+              {/* Bottom arrow at end */}
+              {alertEnd && (
+                <div className={`absolute top-4 right-0 w-3 h-0.5 ${
+                  getAlertForIndex(index)?.isRed ? 'bg-red-400' : 'bg-yellow-400'
+                }`}>
+                  <div className={`absolute right-0 top-1/2 -translate-y-1/2 w-0 h-0
+                    border-t-4 border-t-transparent
+                    border-b-4 border-b-transparent
+                    ${getAlertForIndex(index)?.isRed ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-yellow-400'}`}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Right side - Event card */}
+            <div className="flex-1 min-w-0">
+              <TimelineEventCard
+                event={event}
+                showTravelTime={index > 0}
+                technicianId={technicianId}
+                date={date}
+                onShowGpsLocation={onShowGpsLocation}
+                onShowMapLocation={onShowMapLocation}
+                onLabelLocation={onLabelLocation}
+                onAssignJob={onAssignJob}
+                onAnnotatePunch={onAnnotatePunch}
+                annotationCount={event.punchId ? annotationCounts?.[event.punchId] : undefined}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function DayTimelineComponent({
   timeline,
   onShowGpsLocation,
@@ -939,24 +1084,18 @@ export default function DayTimelineComponent({
         </div>
       )}
 
-      {/* Timeline events */}
-      <div className="p-4 space-y-1">
-        {timeline.events.map((event, index) => (
-          <TimelineEventCard
-            key={event.id}
-            event={event}
-            showTravelTime={index > 0}
-            technicianId={timeline.technicianId}
-            date={timeline.date}
-            onShowGpsLocation={onShowGpsLocation}
-            onShowMapLocation={onShowMapLocation}
-            onLabelLocation={onLabelLocation}
-            onAssignJob={onAssignJob}
-            onAnnotatePunch={onAnnotatePunch}
-            annotationCount={event.punchId ? annotationCounts?.[event.punchId] : undefined}
-          />
-        ))}
-      </div>
+      {/* Timeline events with left-side transit alerts */}
+      <TimelineEventsWithAlerts
+        events={timeline.events}
+        technicianId={timeline.technicianId}
+        date={timeline.date}
+        onShowGpsLocation={onShowGpsLocation}
+        onShowMapLocation={onShowMapLocation}
+        onLabelLocation={onLabelLocation}
+        onAssignJob={onAssignJob}
+        onAnnotatePunch={onAnnotatePunch}
+        annotationCounts={annotationCounts}
+      />
 
       {/* Summary footer */}
       {timeline.totalDriveMinutes > 0 && (
