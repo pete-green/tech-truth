@@ -514,6 +514,11 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         if (lastOfficeEvent && durationMinutes !== undefined) {
           lastOfficeEvent.durationMinutes = (lastOfficeEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
         }
+        // FIX: Update the left_office event's timestamp to the actual departure time
+        const leftOfficeEvent = events.findLast(e => e.type === 'left_office');
+        if (leftOfficeEvent && previousDepartureTime) {
+          leftOfficeEvent.timestamp = previousDepartureTime.toISOString();
+        }
         // CRITICAL: Still update previousArrivalTime so next elapsed calculation is correct
         previousArrivalTime = arrivalTime;
         // Keep lastArrivalType as-is
@@ -572,6 +577,12 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         const lastJobEvent = events.findLast(e => e.type === 'arrived_job' && e.jobId === matchedJob.id);
         if (lastJobEvent && durationMinutes !== undefined) {
           lastJobEvent.durationMinutes = (lastJobEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
+        }
+        // FIX: Update the left_job event's timestamp to the actual departure time
+        // This fixes the bug where "left at" time showed premature departure from first GPS segment
+        const leftJobEvent = events.findLast(e => e.type === 'left_job' && e.jobId === matchedJob.id);
+        if (leftJobEvent && previousDepartureTime) {
+          leftJobEvent.timestamp = previousDepartureTime.toISOString();
         }
         // CRITICAL: Still update previousArrivalTime so next elapsed calculation is correct
         previousArrivalTime = arrivalTime;
@@ -657,6 +668,11 @@ export function buildDayTimeline(input: TimelineInput): DayTimeline {
         const lastCustomEvent = events.findLast(e => e.type === 'arrived_custom' && e.customLocationId === customLoc.id);
         if (lastCustomEvent && durationMinutes !== undefined) {
           lastCustomEvent.durationMinutes = (lastCustomEvent.durationMinutes || 0) + (travelMinutes || 0) + durationMinutes;
+        }
+        // FIX: Update the left_custom event's timestamp to the actual departure time
+        const leftCustomEvent = events.findLast(e => e.type === 'left_custom' && e.customLocationId === customLoc.id);
+        if (leftCustomEvent && previousDepartureTime) {
+          leftCustomEvent.timestamp = previousDepartureTime.toISOString();
         }
         // CRITICAL: Still update previousArrivalTime so next elapsed calculation is correct
         previousArrivalTime = arrivalTime;
