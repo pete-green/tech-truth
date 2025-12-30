@@ -109,6 +109,8 @@ export default function StopDetailsPage() {
   const [loading, setLoading] = useState(false);
   const [loadingTechs, setLoadingTechs] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   // Expanded category state
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
@@ -164,6 +166,96 @@ export default function StopDetailsPage() {
     fetchTechnicians();
   }, []);
 
+  // Sync data from external sources and refresh timeline
+  const syncAndRefresh = useCallback(async (skipRefresh = false) => {
+    if (!selectedTechId || !startDate || !endDate) return;
+
+    setSyncing(true);
+    setSyncResult(null);
+
+    try {
+      const start = parseISO(startDate);
+      const end = parseISO(endDate);
+      const dates = eachDayOfInterval({ start, end });
+
+      // Sync all dates in parallel
+      const syncResults = await Promise.all(
+        dates.map(async (date) => {
+          const dateStr = format(date, 'yyyy-MM-dd');
+          const response = await fetch('/api/sync-timeline-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ technicianId: selectedTechId, date: dateStr }),
+          });
+          return response.json();
+        })
+      );
+
+      // Summarize results
+      let totalGps = 0, totalJobs = 0, totalPunches = 0;
+      for (const res of syncResults) {
+        if (res.success && res.result) {
+          totalGps += res.result.gps?.synced || 0;
+          totalJobs += res.result.jobs?.synced || 0;
+          totalPunches += res.result.punches?.synced || 0;
+        }
+      }
+
+      const resultMsg = `Synced: ${totalGps} GPS, ${totalJobs} jobs, ${totalPunches} punches`;
+      setSyncResult(resultMsg);
+      console.log('[Sync]', resultMsg);
+
+      // Refresh timeline with new data (unless skipped)
+      if (!skipRefresh && (totalGps > 0 || totalJobs > 0 || totalPunches > 0)) {
+        await fetchTimelinesOnly();
+      }
+    } catch (err: any) {
+      console.error('[Sync] Error:', err);
+      setSyncResult('Sync failed');
+    } finally {
+      setSyncing(false);
+      // Clear result message after 5 seconds
+      setTimeout(() => setSyncResult(null), 5000);
+    }
+  }, [selectedTechId, startDate, endDate]);
+
+  // Fetch timelines only (no sync trigger)
+  const fetchTimelinesOnly = useCallback(async () => {
+    if (!selectedTechId || !startDate || !endDate) return;
+
+    try {
+      const start = parseISO(startDate);
+      const end = parseISO(endDate);
+      const dates = eachDayOfInterval({ start, end });
+
+      const [timelinesResults, violationsResponse] = await Promise.all([
+        Promise.all(dates.map(async (date) => {
+          const dateStr = format(date, 'yyyy-MM-dd');
+          const response = await fetch(
+            `/api/reports/technician-timeline?technicianId=${selectedTechId}&date=${dateStr}`
+          );
+          const data = await response.json();
+
+          if (data.success && data.timeline) {
+            return data.timeline as DayTimeline;
+          }
+          return null;
+        })),
+        fetch(`/api/reports/punch-violations?startDate=${startDate}&endDate=${endDate}&technicianId=${selectedTechId}`)
+      ]);
+
+      const validTimelines = timelinesResults.filter((t): t is DayTimeline => t !== null);
+      setTimelines(validTimelines);
+
+      const violationsData = await violationsResponse.json();
+      if (violationsData.success) {
+        setViolations(violationsData.violations || []);
+      }
+    } catch (err: any) {
+      console.error('[Fetch] Error:', err);
+    }
+  }, [selectedTechId, startDate, endDate]);
+
   const fetchTimelines = useCallback(async () => {
     if (!selectedTechId || !startDate || !endDate) return;
 
@@ -204,12 +296,17 @@ export default function StopDetailsPage() {
       if (violationsData.success) {
         setViolations(violationsData.violations || []);
       }
+
+      // Trigger background sync to get fresh data
+      // Don't await - let it run in background
+      syncAndRefresh(false);
+
     } catch (err: any) {
       setError(err.message || 'Failed to fetch timelines');
     } finally {
       setLoading(false);
     }
-  }, [selectedTechId, startDate, endDate]);
+  }, [selectedTechId, startDate, endDate, syncAndRefresh]);
 
   // Calculate time breakdown by category
   const categoryBreakdowns = useMemo((): CategoryBreakdown[] => {
@@ -664,6 +761,32 @@ export default function StopDetailsPage() {
             <AlertTriangle className="w-5 h-5" />
           </div>
           <span className="font-medium">{error}</span>
+        </div>
+      )}
+
+      {/* Syncing Indicator */}
+      {(syncing || syncResult) && (
+        <div className={`mb-6 rounded-xl p-4 flex items-center gap-3 shadow-sm transition-all ${
+          syncing
+            ? 'bg-blue-50 border-2 border-blue-200 text-blue-700'
+            : syncResult?.includes('failed')
+              ? 'bg-red-50 border-2 border-red-200 text-red-700'
+              : 'bg-green-50 border-2 border-green-200 text-green-700'
+        }`}>
+          <div className={`p-2 rounded-full ${
+            syncing ? 'bg-blue-100' : syncResult?.includes('failed') ? 'bg-red-100' : 'bg-green-100'
+          }`}>
+            {syncing ? (
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            ) : syncResult?.includes('failed') ? (
+              <AlertTriangle className="w-5 h-5" />
+            ) : (
+              <Clock className="w-5 h-5" />
+            )}
+          </div>
+          <span className="font-medium">
+            {syncing ? 'Syncing fresh data from GPS, Service Titan, and Paylocity...' : syncResult}
+          </span>
         </div>
       )}
 
