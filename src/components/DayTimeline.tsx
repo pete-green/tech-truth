@@ -844,22 +844,22 @@ function TimelineEventCard({
   );
 }
 
-// Connector line segment types for clean rendering
+// Connector segment types - the bracket spans the entire job-to-job gap
 type ConnectorSegment = 'none' | 'start' | 'middle' | 'end';
 
-// SVG Arrow pointing RIGHT - indicates "this connector leads to this card"
-function ConnectorArrowRight({ color }: { color: string }) {
+// SVG Arrow pointing RIGHT - the termination point of the bracket
+function BracketArrow({ color }: { color: string }) {
   return (
     <svg
-      width="8"
-      height="14"
-      viewBox="0 0 8 14"
+      width="10"
+      height="16"
+      viewBox="0 0 10 16"
       style={{ display: 'block' }}
     >
       <path
-        d="M1 1L7 7L1 13"
+        d="M2 2L8 8L2 14"
         stroke={color}
-        strokeWidth="2.5"
+        strokeWidth="3"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
@@ -869,8 +869,8 @@ function ConnectorArrowRight({ color }: { color: string }) {
 }
 
 // Component that renders events with left-side transit alerts
-// The connector represents ONE hop: from "Left Job A" to "Arrived at Job B"
-// Intermediate stops (gas stations, stores) are embedded in the span but are NOT endpoints
+// The bracket SPANS the entire job-to-job gap as ONE visual element
+// Intermediate content (meals, stops) is INSIDE the bracket, subordinate to it
 function TimelineEventsWithAlerts({
   events,
   technicianId,
@@ -894,7 +894,7 @@ function TimelineEventsWithAlerts({
 }) {
   const alertSpans = findTransitAlertSpans(events);
 
-  // Determine connector segment type for each event row
+  // Determine bracket segment type for each row
   const getConnectorInfo = (index: number): {
     segment: ConnectorSegment;
     alert: TransitAlertSpan | null;
@@ -913,121 +913,134 @@ function TimelineEventsWithAlerts({
     return { segment: 'none', alert: null };
   };
 
-  // Fixed gutter dimensions - the rail is a fixed vertical track
-  const GUTTER_WIDTH = 156;
-  const RAIL_X = GUTTER_WIDTH - 16; // Fixed x-position for the vertical rail
+  // Fixed dimensions - bracket lives in left gutter
+  const GUTTER_WIDTH = 160;
+  const BRACKET_X = GUTTER_WIDTH - 12; // Fixed x-position for vertical rail
+  const BRACKET_WIDTH = 4; // Thick line to dominate visually
 
   return (
     <div className="p-4">
       {events.map((event, index) => {
         const { segment, alert } = getConnectorInfo(index);
         const isRed = alert?.isRed ?? false;
+        const inBracket = segment !== 'none';
 
-        // Colors: emphasized for alert segments
-        const lineColor = isRed ? '#ef4444' : '#f59e0b'; // red-500 / amber-500
-        const lineColorDark = isRed ? '#b91c1c' : '#b45309'; // red-700 / amber-700
+        // Bracket colors - bold and prominent
+        const bracketColor = isRed ? '#dc2626' : '#d97706'; // red-600 / amber-600
+        const bracketColorDark = isRed ? '#991b1b' : '#92400e'; // red-800 / amber-800
+        const bgTint = isRed ? 'rgba(254, 202, 202, 0.3)' : 'rgba(254, 243, 199, 0.3)'; // subtle row tint
 
         return (
-          <div key={event.id} className="flex">
-            {/* Left gutter - fixed width timeline rail */}
+          <div
+            key={event.id}
+            className="flex"
+            style={{
+              // Tint ALL rows inside the bracket to show they're subordinate
+              backgroundColor: inBracket ? bgTint : 'transparent',
+              marginLeft: inBracket ? -16 : 0,
+              paddingLeft: inBracket ? 16 : 0,
+              marginRight: inBracket ? -16 : 0,
+              paddingRight: inBracket ? 16 : 0,
+            }}
+          >
+            {/* Left gutter - contains alert panel and bracket */}
             <div
               className="flex-shrink-0 relative"
               style={{ width: GUTTER_WIDTH }}
             >
-              {/* Alert panel - only at the START of a transit span */}
+              {/* Alert panel - at START of bracket */}
               {segment === 'start' && alert && (
-                <div style={{ paddingRight: 20, paddingBottom: 4 }}>
+                <div style={{ paddingRight: 16, paddingBottom: 4 }}>
                   <TransitAlertPanel analysis={alert.analysis} isRed={isRed} />
                 </div>
               )}
 
-              {/* === TRANSIT CONNECTOR === */}
-              {/* This represents the hop from Job A to Job B */}
+              {/* ═══ SPANNING BRACKET ═══ */}
+              {/* This bracket OWNS the entire job-to-job gap */}
 
-              {/* START: "Left Job" - origin of the transit */}
+              {/* BRACKET OPEN: Top of bracket at "Left Job" */}
               {segment === 'start' && (
                 <>
-                  {/* Origin marker - small horizontal tick from rail to card */}
+                  {/* Horizontal bar connecting to Left Job card */}
                   <div
                     style={{
                       position: 'absolute',
-                      left: RAIL_X,
-                      top: 16,
-                      width: 12,
-                      height: 3,
-                      backgroundColor: lineColor,
-                      borderRadius: 2,
+                      right: 0,
+                      top: 14,
+                      width: GUTTER_WIDTH - BRACKET_X + 4,
+                      height: BRACKET_WIDTH,
+                      backgroundColor: bracketColor,
+                      borderRadius: '2px 0 0 2px',
                     }}
                   />
-                  {/* Vertical line running DOWN from origin to bottom of row */}
+                  {/* Vertical rail going DOWN - starts at the horizontal bar */}
                   <div
                     style={{
                       position: 'absolute',
-                      left: RAIL_X,
-                      top: 19,
+                      left: BRACKET_X,
+                      top: 14,
                       bottom: 0,
-                      width: 3,
-                      backgroundColor: lineColor,
+                      width: BRACKET_WIDTH,
+                      backgroundColor: bracketColor,
                     }}
                   />
                 </>
               )}
 
-              {/* MIDDLE: Intermediate stops - line passes through, no endpoints */}
+              {/* BRACKET MIDDLE: Continuous rail through intermediate content */}
               {segment === 'middle' && (
                 <div
                   style={{
                     position: 'absolute',
-                    left: RAIL_X,
+                    left: BRACKET_X,
                     top: 0,
                     bottom: 0,
-                    width: 3,
-                    backgroundColor: lineColor,
+                    width: BRACKET_WIDTH,
+                    backgroundColor: bracketColor,
                   }}
                 />
               )}
 
-              {/* END: "Arrived at Job" - destination of the transit */}
+              {/* BRACKET CLOSE: Bottom of bracket at "Arrived at Job" */}
               {segment === 'end' && (
                 <>
-                  {/* Vertical line from top, terminating at the connector */}
+                  {/* Vertical rail coming from above */}
                   <div
                     style={{
                       position: 'absolute',
-                      left: RAIL_X,
+                      left: BRACKET_X,
                       top: 0,
-                      height: 28,
-                      width: 3,
-                      backgroundColor: lineColor,
+                      height: 22,
+                      width: BRACKET_WIDTH,
+                      backgroundColor: bracketColor,
                     }}
                   />
-                  {/* Horizontal connector turning RIGHT toward the card */}
+                  {/* Horizontal bar turning toward the Arrived Job card */}
                   <div
                     style={{
                       position: 'absolute',
-                      left: RAIL_X,
-                      top: 25,
-                      width: 20,
-                      height: 3,
-                      backgroundColor: lineColor,
-                      borderRadius: '0 2px 2px 0',
+                      left: BRACKET_X,
+                      top: 18,
+                      right: 0,
+                      height: BRACKET_WIDTH,
+                      backgroundColor: bracketColor,
                     }}
                   />
-                  {/* Arrow pointing RIGHT at the destination card */}
+                  {/* Arrow head at the END - points directly at the card */}
                   <div
                     style={{
                       position: 'absolute',
-                      left: RAIL_X + 18,
-                      top: 20,
+                      right: -6,
+                      top: 12,
                     }}
                   >
-                    <ConnectorArrowRight color={lineColorDark} />
+                    <BracketArrow color={bracketColorDark} />
                   </div>
                 </>
               )}
             </div>
 
-            {/* Event card column */}
+            {/* Event card - intermediate content is INSIDE the bracket */}
             <div className="flex-1 min-w-0 pb-1">
               <TimelineEventCard
                 event={event}
