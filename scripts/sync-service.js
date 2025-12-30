@@ -15,6 +15,7 @@ async function runSync() {
     gps: null,
     jobs: null,
     punches: null,
+    estimates: null,
     errors: []
   };
 
@@ -61,6 +62,21 @@ async function runSync() {
   } catch (err) {
     results.errors.push(`Punches: ${err.message}`);
     console.error(`    ✗ Punches error: ${err.message}`);
+  }
+
+  // Step 4: Estimates Sync
+  try {
+    console.log('  → Syncing estimates data...');
+    const estRes = await fetch(`${APP_URL}/api/sync-estimates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: today }),
+    });
+    results.estimates = await estRes.json();
+    console.log(`    ✓ Estimates: ${results.estimates.summary?.estimatesStored || 0} stored, ${results.estimates.summary?.itemsStored || 0} items`);
+  } catch (err) {
+    results.errors.push(`Estimates: ${err.message}`);
+    console.error(`    ✗ Estimates error: ${err.message}`);
   }
 
   const status = results.errors.length === 0 ? '✓ Complete' : '⚠ Completed with errors';
