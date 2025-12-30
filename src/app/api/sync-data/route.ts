@@ -239,10 +239,10 @@ export async function POST(req: NextRequest) {
         console.log(`  Processing: ${techData.name} - Job ${appointment.jobId} at ${format(scheduledTime, 'h:mm a')}${isFirstJob ? ' (FIRST JOB)' : ''}`);
         console.log(`    Address: ${jobAddress}`);
 
-        // Only do GPS detection for first jobs (saves time and API calls)
+        // Do GPS detection for ALL jobs to track arrival times
         let arrival: { arrivalTime: Date; distanceFeet: number } | null = null;
 
-        if (isFirstJob) {
+        if (true) { // Always detect arrivals for all jobs
           console.log(`    Coordinates: ${jobLat}, ${jobLon}`);
 
           // Step 3d: Get GPS history for this technician's truck
