@@ -7,9 +7,19 @@
 const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
+// Get current date in Eastern Time
+function getEasternDate() {
+  const now = new Date();
+  const eastern = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const year = eastern.getFullYear();
+  const month = String(eastern.getMonth() + 1).padStart(2, '0');
+  const day = String(eastern.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 async function runSync() {
-  const today = new Date().toISOString().split('T')[0];
-  console.log(`[${new Date().toISOString()}] Starting sync for ${today}`);
+  const today = getEasternDate();
+  console.log(`[${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}] Starting sync for ${today}`);
 
   const results = {
     gps: null,
@@ -80,7 +90,7 @@ async function runSync() {
   }
 
   const status = results.errors.length === 0 ? '✓ Complete' : '⚠ Completed with errors';
-  console.log(`[${new Date().toISOString()}] Sync ${status}\n`);
+  console.log(`[${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}] Sync ${status}\n`);
 
   return results;
 }
