@@ -206,7 +206,8 @@ export async function POST(req: NextRequest) {
           is_sold: estimate.soldOn !== null,
           subtotal: estimate.subtotal || null,
           tax: estimate.tax || null,
-          total: estimate.total || null,
+          // Calculate total from subtotal + tax (ServiceTitan doesn't always provide total)
+          total: (estimate.subtotal || 0) + (estimate.tax || 0),
           created_at_st: estimate.createdOn,
           sold_at: estimate.soldOn || null,
           minutes_from_arrival_to_creation: minutesToCreation,
