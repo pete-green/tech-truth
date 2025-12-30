@@ -21,7 +21,7 @@ import {
   Tag,
 } from 'lucide-react';
 import DayTimelineComponent, { AssignJobData, AnnotatePunchData, AddMissingPunchData } from '@/components/DayTimeline';
-import SimpleMapModal from '@/components/SimpleMapModal';
+import GoogleMapsModal from '@/components/GoogleMapsModal';
 import LabelLocationModal from '@/components/LabelLocationModal';
 import AssignJobModal from '@/components/AssignJobModal';
 import PunchAnnotationModal from '@/components/PunchAnnotationModal';
@@ -890,7 +890,7 @@ export default function StopDetailsPage() {
 
       {/* Map Modal */}
       {mapLocation && (
-        <SimpleMapModal
+        <GoogleMapsModal
           isOpen={mapModalOpen}
           onClose={() => {
             setMapModalOpen(false);
@@ -900,6 +900,7 @@ export default function StopDetailsPage() {
           longitude={mapLocation.longitude}
           label={mapLocation.label}
           address={mapLocation.address}
+          technicianName={selectedTech?.name}
         />
       )}
 
