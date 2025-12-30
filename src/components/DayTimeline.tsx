@@ -845,22 +845,21 @@ function TimelineEventCard({
 }
 
 // Connector line segment types for clean rendering
-type ConnectorSegment = 'none' | 'start' | 'middle' | 'end' | 'start-end'; // start-end for single-hop
+type ConnectorSegment = 'none' | 'start' | 'middle' | 'end';
 
-// SVG Arrow component for crisp rendering
-function ConnectorArrow({ color, className }: { color: string; className?: string }) {
+// SVG Arrow pointing RIGHT - indicates "this connector leads to this card"
+function ConnectorArrowRight({ color }: { color: string }) {
   return (
     <svg
-      width="12"
-      height="8"
-      viewBox="0 0 12 8"
-      className={className}
+      width="8"
+      height="14"
+      viewBox="0 0 8 14"
       style={{ display: 'block' }}
     >
       <path
-        d="M1 1L6 6L11 1"
+        d="M1 1L7 7L1 13"
         stroke={color}
-        strokeWidth="2"
+        strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
@@ -870,6 +869,8 @@ function ConnectorArrow({ color, className }: { color: string; className?: strin
 }
 
 // Component that renders events with left-side transit alerts
+// The connector represents ONE hop: from "Left Job A" to "Arrived at Job B"
+// Intermediate stops (gas stations, stores) are embedded in the span but are NOT endpoints
 function TimelineEventsWithAlerts({
   events,
   technicianId,
@@ -899,9 +900,6 @@ function TimelineEventsWithAlerts({
     alert: TransitAlertSpan | null;
   } => {
     for (const span of alertSpans) {
-      if (index === span.fromIndex && index === span.toIndex) {
-        return { segment: 'start-end', alert: span };
-      }
       if (index === span.fromIndex) {
         return { segment: 'start', alert: span };
       }
@@ -915,111 +913,121 @@ function TimelineEventsWithAlerts({
     return { segment: 'none', alert: null };
   };
 
-  // Fixed gutter width and rail position
-  const GUTTER_WIDTH = 152; // w-38 equivalent
-  const RAIL_X = GUTTER_WIDTH - 8; // 8px from right edge of gutter
+  // Fixed gutter dimensions - the rail is a fixed vertical track
+  const GUTTER_WIDTH = 156;
+  const RAIL_X = GUTTER_WIDTH - 16; // Fixed x-position for the vertical rail
 
   return (
     <div className="p-4">
       {events.map((event, index) => {
         const { segment, alert } = getConnectorInfo(index);
         const isRed = alert?.isRed ?? false;
-        const lineColor = isRed ? '#f87171' : '#fbbf24'; // red-400 / yellow-400
-        const lineColorDark = isRed ? '#dc2626' : '#d97706'; // red-600 / yellow-600
+
+        // Colors: emphasized for alert segments
+        const lineColor = isRed ? '#ef4444' : '#f59e0b'; // red-500 / amber-500
+        const lineColorDark = isRed ? '#b91c1c' : '#b45309'; // red-700 / amber-700
 
         return (
           <div key={event.id} className="flex">
-            {/* Left gutter - fixed width, contains alert panel and connector */}
+            {/* Left gutter - fixed width timeline rail */}
             <div
               className="flex-shrink-0 relative"
               style={{ width: GUTTER_WIDTH }}
             >
-              {/* Alert panel - positioned at start of span */}
+              {/* Alert panel - only at the START of a transit span */}
               {segment === 'start' && alert && (
-                <div className="pr-4 pb-2">
+                <div style={{ paddingRight: 20, paddingBottom: 4 }}>
                   <TransitAlertPanel analysis={alert.analysis} isRed={isRed} />
                 </div>
               )}
 
-              {/* Connector rail - vertical line in fixed position */}
-              {segment !== 'none' && (
+              {/* === TRANSIT CONNECTOR === */}
+              {/* This represents the hop from Job A to Job B */}
+
+              {/* START: "Left Job" - origin of the transit */}
+              {segment === 'start' && (
+                <>
+                  {/* Origin marker - small horizontal tick from rail to card */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: RAIL_X,
+                      top: 16,
+                      width: 12,
+                      height: 3,
+                      backgroundColor: lineColor,
+                      borderRadius: 2,
+                    }}
+                  />
+                  {/* Vertical line running DOWN from origin to bottom of row */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: RAIL_X,
+                      top: 19,
+                      bottom: 0,
+                      width: 3,
+                      backgroundColor: lineColor,
+                    }}
+                  />
+                </>
+              )}
+
+              {/* MIDDLE: Intermediate stops - line passes through, no endpoints */}
+              {segment === 'middle' && (
                 <div
-                  className="absolute"
                   style={{
+                    position: 'absolute',
                     left: RAIL_X,
+                    top: 0,
+                    bottom: 0,
                     width: 3,
+                    backgroundColor: lineColor,
                   }}
-                >
-                  {/* Top connector (from previous row or start dot) */}
-                  {segment === 'start' && (
-                    <>
-                      {/* Starting dot - anchored to card top */}
-                      <div
-                        className="absolute rounded-full"
-                        style={{
-                          width: 8,
-                          height: 8,
-                          backgroundColor: lineColor,
-                          left: -2.5,
-                          top: 8,
-                        }}
-                      />
-                      {/* Line from dot to bottom of row */}
-                      <div
-                        className="absolute rounded-full"
-                        style={{
-                          width: 3,
-                          backgroundColor: lineColor,
-                          top: 16,
-                          bottom: 0,
-                        }}
-                      />
-                    </>
-                  )}
+                />
+              )}
 
-                  {/* Middle segment - full height line */}
-                  {segment === 'middle' && (
-                    <div
-                      className="absolute rounded-full"
-                      style={{
-                        width: 3,
-                        backgroundColor: lineColor,
-                        top: 0,
-                        bottom: 0,
-                      }}
-                    />
-                  )}
-
-                  {/* End segment - line from top to arrow */}
-                  {segment === 'end' && (
-                    <>
-                      {/* Line from top to near the card */}
-                      <div
-                        className="absolute rounded-full"
-                        style={{
-                          width: 3,
-                          backgroundColor: lineColor,
-                          top: 0,
-                          height: 20,
-                        }}
-                      />
-                      {/* Downward arrow */}
-                      <div
-                        className="absolute"
-                        style={{
-                          left: -4.5,
-                          top: 18,
-                        }}
-                      >
-                        <ConnectorArrow color={lineColorDark} />
-                      </div>
-                    </>
-                  )}
-                </div>
+              {/* END: "Arrived at Job" - destination of the transit */}
+              {segment === 'end' && (
+                <>
+                  {/* Vertical line from top, terminating at the connector */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: RAIL_X,
+                      top: 0,
+                      height: 28,
+                      width: 3,
+                      backgroundColor: lineColor,
+                    }}
+                  />
+                  {/* Horizontal connector turning RIGHT toward the card */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: RAIL_X,
+                      top: 25,
+                      width: 20,
+                      height: 3,
+                      backgroundColor: lineColor,
+                      borderRadius: '0 2px 2px 0',
+                    }}
+                  />
+                  {/* Arrow pointing RIGHT at the destination card */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: RAIL_X + 18,
+                      top: 20,
+                    }}
+                  >
+                    <ConnectorArrowRight color={lineColorDark} />
+                  </div>
+                </>
               )}
             </div>
 
-            {/* Right side - Event card */}
+            {/* Event card column */}
             <div className="flex-1 min-w-0 pb-1">
               <TimelineEventCard
                 event={event}
